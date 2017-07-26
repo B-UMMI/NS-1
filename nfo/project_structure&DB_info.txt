@@ -1,0 +1,69 @@
+
+############# ROUTES #############
+
+/NS/species/
+/NS/species/{species id}
+/NS/species/{species id}/schema/
+/NS/species/{species id}/schema/{schema id}
+/NS/species/{species id}/loci/
+/NS/species/{species id}/loci/{loci id}
+/NS/species/{species id}/loci/{loci id}/allele/
+/NS/species/{species id}/loci/{loci id}/allele/{allele id}
+
+############# 'Testing' #############
+
+Each GET/POST/PUT method is accompanied by a curl test command
+  
+############# DB INFO #############
+
+#Reset and create db:
+- $ python3
+- $ from yourapplication import db
+- $ db.drop_all()
+- $ db.create_all()
+- $ from yourapplication import Species
+- $ species = Species(XXX)
+- $ db.session.add(species)
+- $ db.session.commit()
+- $ Species.query.all()
+
+#Useful
+  - db.session.rollback()
+  - >>> from app import db
+    >>> db.drop_all()
+    >>> db.create_all()
+    >>> from app.models.models import Species, Schema
+    >>> s1 = Species("badteria")
+    >>> db.session.add(s1)
+    >>> db.session.commit()
+    >>> Species.query.all()
+    >>> schm1 = Schema(50, 'AAA', 'pretty', Species.query.get("badteria"))
+    >>> db.session.add(schm1)
+    >>> db.session.commit()
+    >>> Schema.query.all()
+
+#Add/create a user account and grant permission for database:
+ https://www.cyberciti.biz/faq/howto-add-postgresql-user-account/
+
+1- $ su - postgres
+2- $ su - chewie
+3- $ psql -d testdb -U chewie
+
+#Starting the database server:
+ https://www.postgresql.org/docs/9.5/static/server-start.html
+
+############# STRUCTURE #############
+@ flask-RESTful official website:
+myapi/
+    __init__.py
+    app.py          # this file contains your app and routes
+    resources/
+        __init__.py
+        foo.py      # contains logic for /Foo
+        bar.py      # contains logic for /Bar
+    common/
+        __init__.py
+        util.py     # just some common infrastructure
+
+@ NS app:
+Look at the folders :p
