@@ -130,7 +130,6 @@ class LociListAPI(Resource):
 	def post(self, species_name):
 		args = self.reqparse.parse_args(strict=True)
 		check_len(args['aliases'])
-		# check_len(args['allele_number']) # TODO: checklen alleles?
 		loci = Loci(args['id'], args['aliases'], args['allele_number'], Species.query.get_or_404(species_name))
 		db.session.add(loci)
 		db.session.commit()
