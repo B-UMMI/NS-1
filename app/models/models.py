@@ -37,7 +37,7 @@ class Schema(db.Model):
 class Loci(db.Model):
 	identifier = db.Column(db.Integer, primary_key=True)
 	aliases = db.Column(db.String(2048))
-	allele_number = db.Column(db.Integer) # TODO: actually number of alleles
+	allele_number = db.Column(db.Integer)
 	species_name = db.Column(db.String(SPECIES_NAME_SIZE),
 							 db.ForeignKey('species.name'))
 	alleles = db.relationship('Allele', backref='locus_id', lazy='dynamic')
