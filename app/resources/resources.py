@@ -17,12 +17,14 @@ schema_fields = {
 loci_fields = {
 	'identifier': fields.Integer,
 	'aliases': fields.String,
-	'alleles': fields.String
+	'allele_number': fields.Integer,
+	'species_name': fields.String
 }
 allele_fields = {
 	'identifier': fields.Integer,
 	'time_stamp': fields.DateTime(dt_format='iso8601'),
-	'sequence': fields.String	
+	'sequence': fields.String,	
+	'species_name': fields.String
 }
 
 #### ---- RESOURCES ---- ###
@@ -62,11 +64,6 @@ class SpeciesAPI(Resource):
 	def get(self, name):
 		return marshal(Species.query.get_or_404(name), species_fields)
 
-	# curl -i  -d 'name=baDteria' http://localhost:5000/NS/species/bacteria -X PUT
-	# NOTE: update necessary?
-	def put(self, name):
-		pass
-
 
 class SchemaListAPI(Resource):
 	def __init__(self):
@@ -85,10 +82,9 @@ class SchemaListAPI(Resource):
 								   help='No valid description provided for schema')
 		super(SchemaListAPI, self).__init__()
 
-	# TODO: Only list schemas refering to the species in question
 	# curl -i  http://localhost:5000/NS/species/bacteria/schema
 	def get(self, species_name):
-		return marshal(Schema.query.all(), schema_fields)
+		return marshal(Species.query.get_or_404(species_name).schemas.all(), schema_fields)
 
 	# curl -i http://localhost:5000/NS/species/bacteria/schema -d 'id=7' -d 'loci=ACG' -d 'description=interesting'
 	def post(self, species_name):
@@ -108,10 +104,6 @@ class SchemaAPI(Resource):
 			abort(404)
 		return marshal(Schema.query.get_or_404(id), schema_fields)
 
-	# NOTE: update necessary?
-	def put(self, species_name, id):
-		pass
-
 
 class LociListAPI(Resource):
 	def __init__(self):
@@ -124,24 +116,22 @@ class LociListAPI(Resource):
 								   required=True,
 								   type=str,
 								   help='No valid aliases provided for loci')
-		self.reqparse.add_argument('alleles', dest= 'alleles',
+		self.reqparse.add_argument('allele_number', dest= 'allele_number',
 								   required=True,
 								   type=str,
-								   help='No valid alleles provided for loci')
+								   help='No valid allele number provided for loci')
 		super(LociListAPI, self).__init__()
 
 	# curl -i http://localhost:5000/NS/species/bacteria/loci
-	def get(self, name):
-		return marshal(Loci.query.all(), loci_fields)
+	def get(self, species_name):
+		return marshal(Species.query.get_or_404(species_name).loci.all(), loci_fields)
 
-	# TODO: needs to check URI: "species name rly exists and is
-	#  		associated?". Make relationship in the DB model.
-	# curl -i http://localhost:5000/NS/species/bacteria/loci -d 'id=7' -d 'aliases=macarena' -d 'alleles=YHTHK'
-	def post(self, name):
+	# curl -i http://localhost:5000/NS/species/bacteria/loci -d 'id=7' -d 'aliases=macarena' -d 'allele_number=10'
+	def post(self, species_name):
 		args = self.reqparse.parse_args(strict=True)
 		check_len(args['aliases'])
-		check_len(args['alleles'])
-		loci = Loci(args['id'], args['aliases'], args['alleles'])
+		# check_len(args['allele_number']) # TODO: checklen alleles?
+		loci = Loci(args['id'], args['aliases'], args['allele_number'], Species.query.get_or_404(species_name))
 		db.session.add(loci)
 		db.session.commit()
 		return marshal(loci, loci_fields), 201
@@ -149,12 +139,10 @@ class LociListAPI(Resource):
 
 class LociAPI(Resource):
 	# curl -i  http://localhost:5000/NS/species/bacteria/loci/7
-	def get(self, name, id):
+	def get(self, species_name, id):
+		if Loci.query.get_or_404(id).species_name != species_name:
+			abort(404)
 		return marshal(Loci.query.get_or_404(id), loci_fields)
-	
-	# NOTE: update necessary?
-	def put(self, name, id):
-		pass
 
 
 class AlleleListAPI(Resource):
@@ -174,30 +162,32 @@ class AlleleListAPI(Resource):
 								   help='No valid sequence provided for allele')
 		super(AlleleListAPI, self).__init__()
 
-	# curl -i http://localhost:5000/NS/species/bacteria/loci/1/allele
-	def get(self, name, loci_id):
-		return marshal(Allele.query.all(), allele_fields)
+	# curl -i http://localhost:5000/NS/species/bacteria/loci/7/alleles
+	def get(self, species_name, loci_id):
+		# Check if loci associated with species exists on the database  
+		loci_db_entry = Species.query.get_or_404(species_name).loci.filter_by(identifier=loci_id)
+		if loci_db_entry.first() == None:
+			abort(404)
+		return marshal(loci_db_entry.first().alleles.all(), allele_fields)
 
-	# TODO: needs to check URI: "species name&loci_id rly exist?".
-	# 		Make relationship in DB model?
-	# curl -i http://localhost:5000/NS/species/bacteria/loci/1/allele -d 'id=7' -d 'time_stamp=2017-07-24T17:16:59.688836' -d 'sequence=ACTCTGT'
-	def post(self, name, loci_id):
+	# curl -i http://localhost:5000/NS/species/bacteria/loci/7/alleles -d 'id=7' -d 'time_stamp=2017-07-24T17:16:59.688836' -d 'sequence=ACTCTGT'
+	def post(self, species_name, loci_id):
 		args = self.reqparse.parse_args(strict=True)
 		check_len(args['sequence'])
-		allele = Allele(args['id'], args['time_stamp'], args['sequence'])
+		allele = Allele(args['id'], args['time_stamp'], args['sequence'], Species.query.get_or_404(species_name), Loci.query.get_or_404(loci_id))
 		db.session.add(allele)
 		db.session.commit()
 		return marshal(allele, allele_fields), 201
 
 
 class AlleleAPI(Resource):
-	# curl -i  http://localhost:5000/NS/species/bacteria/loci/1/allele/7
-	def get(self, name, loci_id, id):
+	# curl -i  http://localhost:5000/NS/species/bacteria/loci/7/alleles/7
+	def get(self, species_name, loci_id, id):
+		if Allele.query.get_or_404(id).species_name != species_name:
+			abort(404)
+		if Allele.query.get_or_404(id).locus != loci_id:
+			abort(404)
 		return marshal(Allele.query.get_or_404(id), allele_fields)
-	
-	# NOTE: update necessary?
-	def put(self, name, loci_id, id):
-		pass
 
 
 #### ---- AUXILIARY METHODS ---- ###

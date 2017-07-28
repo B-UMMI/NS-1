@@ -18,10 +18,10 @@ Each GET/POST/PUT method is accompanied by a curl test command
 
 #Reset and create db:
 - $ python3
-- $ from yourapplication import db
+- $ from app import db
 - $ db.drop_all()
 - $ db.create_all()
-- $ from yourapplication import Species
+- $ from app.models.models import Species
 - $ species = Species(XXX)
 - $ db.session.add(species)
 - $ db.session.commit()
@@ -41,6 +41,12 @@ Each GET/POST/PUT method is accompanied by a curl test command
     >>> db.session.add(schm1)
     >>> db.session.commit()
     >>> Schema.query.all()
+
+    >>> loci1 = Loci(50, "locinho", "CTGCT", Species.query.get("badteria"))
+
+Bit more complex queries:
+ - Schema.query.join(Species).filter_by(name=species_name).all()
+ - Species.query.get_or_404(species_name).schemas.all()
 
 #Add/create a user account and grant permission for database:
  https://www.cyberciti.biz/faq/howto-add-postgresql-user-account/

@@ -26,14 +26,14 @@ api.add_resource(SchemaAPI,
 				'/NS/species/<string:species_name>/schema/<int:id>',
 				endpoint='schema')
 api.add_resource(LociListAPI,
-				'/NS/species/<string:name>/loci',
+				'/NS/species/<string:species_name>/loci',
 				endpoint='lociList')
 api.add_resource(LociAPI,
-				'/NS/species/<string:name>/loci/<int:id>',
+				'/NS/species/<string:species_name>/loci/<int:id>',
 				endpoint='loci')
 api.add_resource(AlleleListAPI,
-				'/NS/species/<string:name>/loci/<int:loci_id>/allele',
+				'/NS/species/<string:species_name>/loci/<int:loci_id>/alleles',
 				endpoint='alleleList')
 api.add_resource(AlleleAPI,
-				'/NS/species/<string:name>/loci/<int:loci_id>/allele/<int:id>',
+				'/NS/species/<string:species_name>/loci/<int:loci_id>/alleles/<int:id>',
 				endpoint='allele')
