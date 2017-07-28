@@ -9,6 +9,7 @@ To run this you'll need:
 - flask-sqlalchemy
 - (Optional/Recommended) virtualenv
 - Some type of Database setup (e.g. postgresql, sqlite, ...)
+
 Except the last point everything can be downloaded using pip.
 
 # Detailed Instructions:
@@ -26,7 +27,7 @@ Except the last point everything can be downloaded using pip.
  	- db.create_all()
  	- exit()
 
-5. Having exited the python shell, you should now be able to run the application with: './run.py' (if needed set permissions: )
+5. Having exited the python shell, you should now be able to run the application with: './run.py' (if needed set permissions: chmod a+x run.py)
 
 6. You can now open a new terminal and use curl to test if the application is working: 'curl -i  http://localhost:5000/NS' properly. You can check more curl examples within the 'app/resources/resources.py' file associated with each GET/POST methods.
 
@@ -50,21 +51,22 @@ Running locally and considering the endpoints above we can (using a browser) lis
 	> http://localhost:5000/NS/species/acinetobacter/loci
 4. Specific allele with id 5 for species 'acinetobacter' and loci with id 1
 	> http://localhost:5000/NS/species/acinetobacter/loci/1/allele/5
+
 (Just precede the URLs with 'curl' if you want to use a terminal to GET the information, e.g. 'curl http://localhost:5000/NS/')
 
 
 ### Fields accepted to POST:
-###### Species:
+##### Species:
  - name
-###### Schema:
+##### Schema:
  - id
  - loci
  - description
-###### Loci:
+##### Loci:
  - id
  - aliases
  - allele_number
-###### Allele:
+##### Allele:
  - id
  - time_stamp
  - sequence
