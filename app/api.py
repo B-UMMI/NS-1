@@ -1,8 +1,8 @@
 from app import app
 from flask_restful import Api
-from app.resources.resources import NS
+from app.resources.resources import NS, createUser
 from app.resources.resources import SpeciesListAPI, SpeciesAPI
-from app.resources.resources import SchemaListAPI, SchemaAPI
+from app.resources.resources import SchemaListAPI, SchemaAPI, SchemaLociAPI
 from app.resources.resources import LociListAPI, LociAPI
 from app.resources.resources import AlleleListAPI, AlleleAPI
 
@@ -10,6 +10,11 @@ from app.resources.resources import AlleleListAPI, AlleleAPI
 api = Api(app)
 
 # NOTE: maybe use 'url_for(...)' + concatenation instead of hard coding URIs
+
+api.add_resource(createUser,
+				'/createUser',
+				endpoint='createUser')
+
 api.add_resource(NS,
 				'/NS',
 				endpoint='NS')
@@ -25,6 +30,9 @@ api.add_resource(SchemaListAPI,
 api.add_resource(SchemaAPI,
 				'/NS/species/<string:species_name>/schema/<int:id>',
 				endpoint='schema')
+api.add_resource(SchemaLociAPI,
+				'/NS/species/<string:species_name>/schema/<int:id>/loci',
+				endpoint='schemaLoci')
 api.add_resource(LociListAPI,
 				'/NS/species/<string:species_name>/loci',
 				endpoint='lociList')
