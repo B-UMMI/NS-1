@@ -1,5 +1,5 @@
 import datetime
-from app import db, app
+from app import db, app, blaze_server
 from flask import abort
 from flask_restful import Resource, reqparse, marshal, fields
 from app.models.models import Species, Schema, Loci, Allele, User, Role
