@@ -6,7 +6,8 @@ app = Flask(__name__)
 app.config.from_object('config')
 db = SQLAlchemy(app)
 
-virtuoso_server=sparql=SPARQLWrapper('http://localhost:8890/sparql')
+virtuoso_server=SPARQLWrapper(app.config['LOCAL_SPARQL'])
+uniprot_server=SPARQLWrapper(app.config['UNIPROT_SPARQL'])
 
 from app import api, models
 
