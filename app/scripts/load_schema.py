@@ -1,17 +1,16 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from Bio.Seq import Seq
 from Bio import SeqIO
 from Bio.Alphabet import generic_dna
 import os
 import argparse
-import urllib
 import datetime
 from SPARQLWrapper import SPARQLWrapper,JSON
 import requests
 
-baseURL="http://localhost:5000/NS/"
-defaultgraph="<http://localhost:8890/2del>"
+baseURL=""
+defaultgraph="<http://localhost:8890/test>"
 virtuoso_user=''
 virtuoso_pass=''
 virtuoso_server=SPARQLWrapper('http://localhost:8890/sparql')
@@ -95,16 +94,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="This program prepares a schema")
     parser.add_argument('-i', nargs='?', type=str, help='path to folder containg the schema fasta files ( alternative a list of fasta files)', required=True)
+    parser.add_argument('-sp', nargs='?', type=str, help='species id', required=True)
+    #~ parser.add_argument('-sc', nargs='?', type=str, help='schema id', required=True)
+    parser.add_argument('-t', nargs='?', type=str, help='token', required=True)
 
     args = parser.parse_args()
-
     geneFiles = args.i
-    species="1"
-    schema="1"
-    
+    species = args.sp
+    #~ schema = args.sc
+    token = args.t
+
     geneFiles = check_if_list_or_folder(geneFiles)
     if isinstance(geneFiles, list):
-        with open("listGenes.txt", "wb") as f:
+        with open("listGenes.txt", "w") as f:
             for genome in geneFiles:
                 f.write(genome + "\n")
         geneFiles = "listGenes.txt"
@@ -116,6 +118,7 @@ def main():
         gene = gene.rstrip('\n')
         listGenes.append(gene)
     gene_fp.close()	
+    listGenes.sort()
     
     try:
         os.remove("listGenes.txt")
@@ -124,35 +127,51 @@ def main():
 	
     print ("Processing the fastas")
     
+    #create new schema called wgMLST and get schema id
+    params = {}
+    params['description'] = "wgMLST"
+    headers = {'Authentication-Token': token}
+
+    url = baseURL+"species/"+species+"/schemas"
+    print (url)
+    r = requests.post(url, data=params,headers=headers)
+    print (r)
+    schema_url= r.text.replace('"', '').strip()
+    #~ print(schema_url)
+    #~ asdas
+    #~ schema_url=((r.content).decode("utf-8")).replace('"', '').strip()
+	#~ new_allele_id=str(int(allele_url.split("/")[-1]))
     
-    print (listGenes)
+    
+    #~ print (listGenes)
     
     result = get_data(virtuoso_server,'select (COUNT(?seq) as ?count) where {?seq a <http://purl.phyloviz.net/ontology/typon#Sequence> }')
     num_sequences=int(result["results"]["bindings"][0]['count']['value'])
 
-    print num_sequences
+    print (num_sequences)
     num_of_loci=0
-    
     for gene in listGenes:
         params = {}
         name=os.path.basename(gene)
-        print name
+        print (name)
 
         
         params = {}
-        params['aliases'] = name
+        params['prefix'] = "ACIBA"
+        headers = {'Authentication-Token': token}
 
         url = baseURL+"species/"+species+"/loci"
-        r = requests.post(url, data=params)
+        r = requests.post(url, data=params,headers=headers)
         
-
+        #~ print (r)
+        #~ asdsa
         
         if r.status_code == 409:
-			print "already exists"
-			continue
+            print ("already exists")
+            continue
         elif r.status_code == 404:
-			print "species not found"
-			continue
+            print ("species not found")
+            continue
         
         loci_url= r.text.replace('"', '').strip()
         
@@ -160,9 +179,9 @@ def main():
         params = {}
         params['loci_id'] = new_loci_id
 
-        url = baseURL+"species/"+species+"/schemas/"+schema+"/loci"
-        r = requests.post(url, data=params)
-        #~ print (r.text)
+        url = schema_url+"/loci"
+        r = requests.post(url, data=params,headers=headers)
+        print (r.text)
 		
         if r.status_code > 201:
             return (r.status_code)
@@ -202,23 +221,22 @@ def main():
                     url2=result["results"]["bindings"][0]['label']['value']
                     rdf_2_ins+='<'+new_seq_url+'> typon:hasUniprotLabel "'+url2+'"^^xsd:string.'
                 except:
-                    print "no label associated"
+                    print ("no label associated")
                     pass
                 try:
                     url2=result["results"]["bindings"][0]['sname']['value']
                     rdf_2_ins+='<'+new_seq_url+'> typon:hasUniprotSName "'+url2+'"^^xsd:string.'
                 except:
-                    print "no submitted name associated"
+                    print ("no submitted name associated")
                     pass
                     
             except Exception as e:
-                print "sequence is not in uniprot"
+                print ("sequence is not in uniprot")
                 pass
         #~ print (rdf_2_ins)
         send_data(rdf_2_ins+"\n}")
 
-        num_of_loci+=1
-    
+        num_of_loci+=1    
 
 if __name__ == "__main__":
     main()

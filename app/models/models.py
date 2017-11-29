@@ -1,11 +1,19 @@
 #from app import db,bcrypt, app
 from app import db
-import datetime
 from flask_security import Security, SQLAlchemyUserDatastore, \
     UserMixin, RoleMixin
 SPECIES_NAME_SIZE = 2048
 
 
+class Auxiliar(db.Model):
+	identifier = db.Column(db.Integer, primary_key=True, autoincrement=True)
+	number_seq = db.Column(db.Integer)
+	
+	def __init__(self, number_seq):
+		self.number_seq = number_seq
+
+	def __repr__(self):
+		return '<Stats %r>' % (self.number_seq)
 
 #~ class Species(db.Model):
 	#~ name = db.Column(db.String(SPECIES_NAME_SIZE), primary_key=True)
