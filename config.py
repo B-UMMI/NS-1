@@ -1,12 +1,12 @@
-SQLALCHEMY_DATABASE_URI = 'postgresql://msilva:msilva@localhost/test'
+SQLALCHEMY_DATABASE_URI = 'postgresql://someone:someone@localhost/test'
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 SECURITY_PASSWORD_HASH = 'pbkdf2_sha512'
 SECURITY_TRACKABLE = True
-SECRET_KEY = 'super-secret'
-SECURITY_PASSWORD_SALT = 'something_super_secret_change_in_production'
+SECRET_KEY = ''
+SECURITY_PASSWORD_SALT = ''
 WTF_CSRF_ENABLED = False
-BASE_URL="http://localhost:5000/NS/"
-DEFAULTHGRAPH="<http://localhost:8890/2del>"
+BASE_URL=''
+DEFAULTHGRAPH="<http://localhost:8890/test>"
 VIRTUOSO_USER=''
 VIRTUOSO_PASS=''
 LOCAL_SPARQL='http://localhost:8890/sparql'
