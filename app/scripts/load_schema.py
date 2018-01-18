@@ -8,8 +8,9 @@ import argparse
 import datetime
 from SPARQLWrapper import SPARQLWrapper,JSON
 import requests
+import time
 
-baseURL=""
+baseURL=''
 defaultgraph="<http://localhost:8890/test>"
 virtuoso_user=''
 virtuoso_pass=''
@@ -19,13 +20,24 @@ uniprot_server=SPARQLWrapper('http://sparql.uniprot.org/sparql')
 def send_data(sparql_query):
     url = 'http://localhost:8890/DAV/test_folder/data'
     headers = {'content-type': 'application/sparql-query'}
-    r = requests.post(url, data=sparql_query, headers=headers, auth=requests.auth.HTTPBasicAuth(virtuoso_user, virtuoso_pass))
+    try:
+        r = requests.post(url, data=sparql_query, headers=headers, auth=requests.auth.HTTPBasicAuth(virtuoso_user, virtuoso_pass), timeout=10)
+    except Exception as e:
+        time.sleep(5)
+        r = requests.post(url, data=sparql_query, headers=headers, auth=requests.auth.HTTPBasicAuth(virtuoso_user, virtuoso_pass), timeout=10)
     return r
 
 def get_data(sparql_server, sparql_query):
     sparql_server.setQuery(sparql_query)
     sparql_server.setReturnFormat(JSON)
-    result = sparql_server.query().convert()
+    sparql_server.setTimeout(10)
+    try:
+        result = sparql_server.query().convert()
+    except:
+        print ("request to uniprot timed out, trying new request")
+        time.sleep(5)
+        result = sparql_server.query().convert()
+		
     return result
 
 def translateSeq(DNASeq, verbose):
@@ -97,12 +109,16 @@ def main():
     parser.add_argument('-sp', nargs='?', type=str, help='species id', required=True)
     #~ parser.add_argument('-sc', nargs='?', type=str, help='schema id', required=True)
     parser.add_argument('-t', nargs='?', type=str, help='token', required=True)
+    parser.add_argument('--sname', nargs='?', type=str, help='schema name', required=True)
+    parser.add_argument('--sprefix', nargs='?', type=str, help='loci prefix', required=True)
 
     args = parser.parse_args()
     geneFiles = args.i
     species = args.sp
     #~ schema = args.sc
     token = args.t
+    schema_name = args.sname
+    schema_prefix = args.sprefix
 
     geneFiles = check_if_list_or_folder(geneFiles)
     if isinstance(geneFiles, list):
@@ -129,24 +145,21 @@ def main():
     
     #create new schema called wgMLST and get schema id
     params = {}
-    params['description'] = "wgMLST"
+    params['description'] = schema_name
     headers = {'Authentication-Token': token}
 
     url = baseURL+"species/"+species+"/schemas"
     print (url)
     r = requests.post(url, data=params,headers=headers)
-    print (r)
+    #~ print (r)
     schema_url= r.text.replace('"', '').strip()
     #~ print(schema_url)
-    #~ asdas
-    #~ schema_url=((r.content).decode("utf-8")).replace('"', '').strip()
-	#~ new_allele_id=str(int(allele_url.split("/")[-1]))
     
+    #get number of sequences
+    url=baseURL+"/sequences"
+    r = requests.get(url, timeout=10)
+    num_sequences= int(r.text.replace('"', '').strip())
     
-    #~ print (listGenes)
-    
-    result = get_data(virtuoso_server,'select (COUNT(?seq) as ?count) where {?seq a <http://purl.phyloviz.net/ontology/typon#Sequence> }')
-    num_sequences=int(result["results"]["bindings"][0]['count']['value'])
 
     print (num_sequences)
     num_of_loci=0
@@ -157,11 +170,16 @@ def main():
 
         
         params = {}
-        params['prefix'] = "ACIBA"
+        params['prefix'] = schema_prefix
         headers = {'Authentication-Token': token}
 
         url = baseURL+"species/"+species+"/loci"
-        r = requests.post(url, data=params,headers=headers)
+        try:
+            r = requests.post(url, data=params,headers=headers, timeout=10)
+        except:
+            # add to end of the list and try next one
+            listGenes.append(gene)
+            continue
         
         #~ print (r)
         #~ asdsa
@@ -180,7 +198,12 @@ def main():
         params['loci_id'] = new_loci_id
 
         url = schema_url+"/loci"
-        r = requests.post(url, data=params,headers=headers)
+        try:
+            r = requests.post(url, data=params,headers=headers, timeout=10)
+        except:
+            time.sleep(5)
+            r = requests.post(url, data=params,headers=headers, timeout=10)
+			
         print (r.text)
 		
         if r.status_code > 201:
@@ -192,8 +215,9 @@ def main():
         #~ new_allele_id=str(int(allele_url.split("/")[-1]))
         
                 
-                    
-        rdf_2_ins='PREFIX typon:   <http://purl.phyloviz.net/ontology/typon#> \nINSERT DATA IN GRAPH '+defaultgraph+' {\n'
+        listRdfs2load=[]            
+        rdf_header='PREFIX typon:   <http://purl.phyloviz.net/ontology/typon#> \nINSERT DATA IN GRAPH '+defaultgraph+' {\n'
+        rdf_2_ins=rdf_header
         num_alleles=0
         for allele in SeqIO.parse(gene, "fasta", generic_dna):
             params = {}
@@ -233,10 +257,32 @@ def main():
             except Exception as e:
                 print ("sequence is not in uniprot")
                 pass
-        #~ print (rdf_2_ins)
-        send_data(rdf_2_ins+"\n}")
+            
+             #length of an rdf of a 8.8Mb fasta file is 9723207 and uploads ok
+            if len(rdf_2_ins)> 9000000:
+                rdf_2_ins+="\n}"
+                listRdfs2load.append(rdf_2_ins)
+                rdf_2_ins=rdf_header
+        
+        rdf_2_ins+="\n}"
+        listRdfs2load.append(rdf_2_ins)
+                    
+        for rdf2send in listRdfs2load:
+            #~ print (rdf_2_ins)
+            send_data(rdf2send)
 
-        num_of_loci+=1    
+        num_of_loci+=1
+    
+    #update number of sequences
+    try:
+        url=baseURL+"/sequences"
+        r = requests.get(url, timeout=10)
+        result=r.json()
+    except:
+        time.sleep(5)
+        url=baseURL+"/sequences"
+        r = requests.get(url, timeout=10)
+        result=r.json()  
 
 if __name__ == "__main__":
     main()
