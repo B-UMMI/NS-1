@@ -1,8 +1,8 @@
 from app import app
 from flask_restful import Api
-from app.resources.resources_ngsonto import NS, createUser, profile
+from app.resources.resources_ngsonto import NS, profile
 from app.resources.resources_ngsonto import SpeciesListAPItypon, SpeciesAPItypon
-from app.resources.resources_ngsonto import SchemaListAPItypon, SchemaLociAPItypon, SchemaAPItypon
+from app.resources.resources_ngsonto import SchemaListAPItypon, SchemaLociAPItypon, SchemaAPItypon, SchemaZipAPItypon
 from app.resources.resources_ngsonto import LociListAPItypon, LociAPItypon, LociFastaAPItypon, LociSequencesAPItypon
 from app.resources.resources_ngsonto import AlleleListAPItypon, AlleleAPItypon, SequencesAPItypon, SequencesListAPItypon
 from app.resources.resources_ngsonto import IsolatesAPItypon, IsolatesAllelesAPItypon, IsolatesListAPItypon, IsolatesProfileAPItypon
@@ -13,11 +13,6 @@ version="/v1"
 api = Api(app)
 
 # NOTE: maybe use 'url_for(...)' + concatenation instead of hard coding URIs
-
-##remove comment to add new user :p - needs to change
-#~ api.add_resource(createUser,
-				#~ '/createUser',
-				#~ endpoint='createUser')
 
 				
 api.add_resource(NS,
@@ -44,6 +39,10 @@ api.add_resource(SchemaListAPItypon,
 api.add_resource(SchemaAPItypon,
 				version+'/NS/species/<int:spec_id>/schemas/<int:id>',
 				endpoint='schema')
+
+api.add_resource(SchemaZipAPItypon,
+				version+'/NS/species/<int:spec_id>/schemas/<int:id>/compressed',
+				endpoint='schemaZip')				
 
 api.add_resource(SchemaLociAPItypon,
 				version+'/NS/species/<int:spec_id>/schemas/<int:id>/loci',
