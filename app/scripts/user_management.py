@@ -54,11 +54,13 @@ def main():
 	args = parser.parse_args()
 	new_mail = args.u
 	new_pass = args.p
-	print("lala")
 	
+	#chewie@ns.com
+	#sdfkjsdfhkqjwheqwkjasdjn
 
 	with app.app_context():
 		if not user_datastore.get_user(new_mail):
+			print("new user")
 			user_datastore.create_user(email=new_mail, password=new_pass)
 			db.session.commit()
 			userid=user_datastore.get_user(new_mail).id
@@ -71,6 +73,7 @@ def main():
 			else:
 				return "Sum Thing Wong", result.status_code
 		
+		print("user already exists")
 		r = requests.post('http://127.0.0.1:5000/login', data=json.dumps({'email':new_mail, 'password':new_pass}), headers={'content-type': 'application/json'})
 		print (r.json())
 	return 'user already created'
