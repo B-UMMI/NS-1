@@ -23,6 +23,7 @@ db = SQLAlchemy(app)
 
 virtuoso_server=SPARQLWrapper(app.config['LOCAL_SPARQL'])
 uniprot_server=SPARQLWrapper(app.config['UNIPROT_SPARQL'])
+dbpedia_server=SPARQLWrapper(app.config['DBPEDIA_SPARQL'])
 
 #### test celery
 #~ app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'

@@ -6,11 +6,13 @@ SECRET_KEY = ''
 SECURITY_PASSWORD_SALT = ''
 WTF_CSRF_ENABLED = False
 BASE_URL="http://137.205.69.51/app/v1/NS/"
+API_VERSION="v1"
 DEFAULTHGRAPH="<http://localhost:8890/test>"
 VIRTUOSO_USER=''
 VIRTUOSO_PASS=''
 LOCAL_SPARQL='http://localhost:8890/sparql'
 UNIPROT_SPARQL='http://sparql.uniprot.org/sparql'
+DBPEDIA_SPARQL='http://dbpedia.org/sparql/'
 DOWNLOAD_FOLDER='/home/ubuntu/schemas_zip'
 
 URL_SEND_LOCAL_VIRTUOSO='http://localhost:8890/DAV/test_folder/data'

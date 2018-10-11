@@ -11,6 +11,9 @@ import requests
 import time
 import multiprocessing
 
+import sys
+path_2_app=os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+sys.path.append(path_2_app)
 from app import app
 
 baseURL=app.config['BASE_URL']
@@ -199,35 +202,38 @@ def main():
 		
 		#check if locus is already on the species database, the program crashed before uploading all the fasta or something
 		loci_url=False
-		for allele in SeqIO.parse(gene, "fasta", generic_dna):
-			
-			sequence=(str(allele.seq)).upper()
-			params = {}
-			params['sequence'] = sequence
-			
-			#request is done for the 1st allele sequence
-			sucess_send = False
-			waitFactor = 4
-			while not sucess_send:
-				r = requests.get(url,data=params,timeout=30)
+		try:
+			for allele in SeqIO.parse(gene, "fasta", generic_dna):
 				
-				if r.status_code >201:
-					print("Server returned code " + str(req_code))
-					print("Retrying in seconds "+str(waitFactor))
-					time.sleep(waitFactor)
-					waitFactor = waitFactor * 2
-				else:
-					sucess_send=True
+				sequence=(str(allele.seq)).upper()
+				params = {}
+				params['sequence'] = sequence
 				
-				req_code = int(r.status_code)
-				result=r.json()
-			
-			#if try sucessfull, the locus is already on the species database, except will continue to start adding the locus to the server
-			try:
-				loci_url=result[0]['locus']['value']
-			except:
-				pass
-			break
+				#request is done for the 1st allele sequence
+				sucess_send = False
+				waitFactor = 4
+				while not sucess_send:
+					r = requests.get(url,data=params,timeout=30)
+					
+					if r.status_code >201:
+						print("Server returned code " + str(req_code))
+						print("Retrying in seconds "+str(waitFactor))
+						time.sleep(waitFactor)
+						waitFactor = waitFactor * 2
+					else:
+						sucess_send=True
+					
+					req_code = int(r.status_code)
+					result=r.json()
+				
+				#if try sucessfull, the locus is already on the species database, except will continue to start adding the locus to the server
+				try:
+					loci_url=result[0]['locus']['value']
+				except:
+					pass
+				break
+		except:
+			continue
 		
 		#name=os.path.basename(gene)
 		#print (name)
@@ -270,7 +276,7 @@ def main():
 			params = {}
 			params['loci_id'] = new_loci_id
 			
-			if keep:
+			if keepFileName:
 				params['locus_ori_name'] = os.path.basename(gene)
 
 			url = schema_url+"/loci"

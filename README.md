@@ -1,86 +1,108 @@
-# About:
-This project is to be used in association with chewBBaca (https://github.com/mickaelsilva/chewBBACA/) for a RESTful way of navigating through the data available (and eventually have the data synced between users). It was and will continue to be developed at iMM (instituto de Medicina Molecular) Lisbon.
+# Nomenclature Server
 
-# Overview:
-To run this you'll need:
+## About:
+This project main aim is to be used in association with chewBBaca_NS (https://github.com/B-UMMI/chewBBACA/tree/chewie_NS). The Nomenclature Server aims to provide a free MLST data repository (wgMLST, cgMLST,etc).
+
+## notes:
+ * The implementation enforces that every sequence needs to translate into a Coding Sequence. This will also be used to query the uniprot database for more info on the protein sequence.
+ * Every submited sequence is hashed and checked against the database.
+ * Sequences are species independent, while schemas, loci and isolates are not.
+ * Every new species added needs to be found at https://www.uniprot.org/taxonomy/ (exact string comparison). For instance: when adding `Acinetobacter calcoaceticus/baumannii complex` it will be mapped to https://www.uniprot.org/taxonomy/909768.
+ * The presented project is a basic implementation of the ontology **TypOn: the microbial typing ontology** (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4290098/).
+
+## Overview:
+To run this you'll need (installation of the following requirements are covered at the detailed instructions) :
 - python 3.xxx (developed on 3.5.2)
 - flask
-- flask-restful
-- flask-sqlalchemy
-- (Optional/Recommended) virtualenv
+- virtualenv
 - Some type of Database setup (e.g. postgresql, sqlite, ...)
+- virtuoso triple store (developed on 06.01.3127)
 
-Except the last point everything can be downloaded using pip.
+# Installation detailed instructions:
 
-# Detailed Instructions:
-0. (Optional/Recommended) On the root folder run 'python3 -m venv flask' (or 'python' as long as it's calling version 3.xxx)
+0. get the app:
+0.1 create a folder where the app will be stored
+0.2 git pull the repository for the folder
 
-1. Set up your Database (usually involves creating a user and initializing a database/schema)
+1. Virtuoso installation
+1.1  Ubutunu installation (see also http://vos.openlinksw.com/owiki/wiki/VOS/VOSUbuntuNotes)
+`sudo apt-get install aptitude`
+`sudo aptitude install  virtuoso-opensource`
+Other dists (see http://vos.openlinksw.com/owiki/wiki/VOS)
+1.2 Usually the daemon is started after installation, kill the process or stop it
+1.3 copy the virtuoso.db file to /var/lib/virtuoso-opensource-6.1/db/ (replace if already existing). This file is preloaded with the typon and the configuration necessary to be used with the application.
+1.4 start manually virtuoso (use it in a screen environment)
+`sudo virtuoso-t -fd`
+1.5 configuring your virtuoso instance
+check http://localhost/8000 on your browser and go to conductor, default admin of virtuoso is set as u:dba p:dba
+**change the password** of dba at "system admin" -> "user accounts". Also change the user "demo" password (default password is "demo" and **should be changed**). The "demo" user will be the one used to contact with the Nomenclature server application.
 
-2. Open the 'config.py' file (located on the root folder) and replace the 'SQLALCHEMY_DATABASE_URI' value with the corresponding one for your use case (for examples check: http://flask-sqlalchemy.pocoo.org/2.1/config/#connection-uri-format)
+2. Install nginx
+`sudo apt-get install nginx`
+`sudo ufw allow 'Nginx HTTP'`
+2.1 Configure nginx for the application:
+We are going to route virtuoso and the application, which is in port 8890 and 5000 respectively. 
+Create new server configuration, save the file in /etc/nginx/sites-available/myconf.conf and copy the following to the file:
+```
+server {
+    listen 80;
+    client_header_buffer_size 30k;
+    large_client_header_buffers 4 30k; 
+ 
+    location /app/ {
+	rewrite ^/app/(.*) /$1  break;
+        proxy_pass http://127.0.0.1:5000;
+    }
+	location / {
+	proxy_pass http://127.0.0.1:8890;
+            }
+}
+```
+Enable new configuration by creating a symbolic link in sites-enabled directory.
+`sudo ln -s /etc/nginx/sites-available/myconf.conf /etc/nginx/sites-enabled/`
 
-3. Open a terminal and type 'python3' (if you're using venv don't forget to activate it OR issue the command like so: 'flask/bin/python3'). Note that instead of 'python3' you might only have 'python' (maybe you have both). As long as it is version 3.xxx there's probably no problem. 
+3. Install redis for queue management
+`sudo apt install redis-server`
 
-4. Inside the interactive python shell initialize the Database:
+4. Install postgres and create a new database called "test" with password "postgres" (change at your own preference):
+`sudo -i -u postgres`
+`psql`
+`CREATE database test;`
+#change password
+`\password postgres`
+
+5. Configure the app
+5.1 (Optional/Recommended) On the app folder run 'python3 -m venv flask' (or 'python' as long as it's calling version 3.xxx)
+5.2 install dependencies: 
+`sudo pip3 install -r requirements.txt`
+5.3 Open the 'config.py' file (located on the root folder) and replace the 'SQLALCHEMY_DATABASE_URI' value with the corresponding one for your use case (for examples check http://flask-sqlalchemy.pocoo.org/2.1/config/#connection-uri-format). Configure the other values in config.py: SECRET_KEY, SECURITY_PASSWORD_SALT, BASE_URL (this will be used to define the resources URI), VIRTUOSO_USER, VIRTUOSO_PASS (VIRTUOSO_USER is "demo" and VIRTUOSO_PASS the new password you defined).
+5.4 Open a terminal and type 'python3' (if you're using venv don't forget to activate it OR issue the command like so: 'flask/bin/python3'). Note that instead of 'python3' you might only have 'python' (maybe you have both). As long as it is version 3.xxx there's probably no problem. 
+5.5 Inside the interactive python shell initialize the Database:
  	- from app import db
  	- db.drop_all()
  	- db.create_all()
  	- exit()
 
-5. Having exited the python shell, you should now be able to run the application with: './run.py' (if needed set permissions: chmod a+x run.py)
+    5.6 Having exited the python shell, you should now be able to run the application with: './run.py' (if needed set permissions: chmod a+x run.py). Also take into consideration to run it on a screen environment.
 
-6. You can now open a new terminal and use curl to test if the application is working: 'curl -i  http://localhost:5000/NS' properly. You can check more curl examples within the 'app/resources/resources.py' file associated with each GET/POST methods.
+# API described at:
 
-# Detailed Example Usage:
-### API Endpoints available:
-- /NS/species/
-- /NS/species/{species name}
-- /NS/species/{species name}/schema/
-- /NS/species/{species name}/schema/{schema id}
-- /NS/species/{species name}/loci/
-- /NS/species/{species name}/loci/{loci id}
-- /NS/species/{species name}/loci/{loci id}/allele/
-- /NS/species/{species name}/loci/{loci id}/allele/{allele id}
+https://app.swaggerhub.com/apis/mickaelsilva/nomenclature_server/1.0.0#/
 
-Running locally and considering the endpoints above we can (using a browser) list:
-1. Species:
-	> http://localhost:5000/NS/species 
-2. Schemas for the species 'acinetobacter':
-	> http://localhost:5000/NS/species/acinetobacter
-3. Loci for species 'acinetobacter':
-	> http://localhost:5000/NS/species/acinetobacter/loci
-4. Specific allele with id 5 for species 'acinetobacter' and loci with id 1
-	> http://localhost:5000/NS/species/acinetobacter/loci/1/allele/5
+# First time usage:
 
-(Just precede the URLs with 'curl' if you want to use a terminal to GET the information, e.g. 'curl http://localhost:5000/NS/')
+1. Create the "admin" user:
+1.1 Admin user will be the first user to be created. Usear creation is only reservered to the person with access to the app server. To create a user, use the `user_management.py` script at `$path2App/app/scripts/`, provide an email and a pass and it will return your token.
+1.2 The Created "admin" user is the only allowed to create a schema. **Schema creation is not allowed to other users**.
+2. Create Schemas:
+2.1 Create a Schema based on a set of fasta files:
+Use the `load_schema.py` script at `$path2App/app/scripts/` (use the `-h` flag for more info on how to use). `-t` flag is to be used with the token made on 1.
+2.2 Create a Schema based on a set of loci already on the nomecnalture server:
+Use the `load_schema_no_fasta.py` script at `$path2App/app/scripts/` (use the `-h` flag for more info on how to use). `-t` flag is to be used with the token made on 1.
 
+# Future work
+ - try latest virtuoso version (latest 6.x.xxx or 7)
+ - improve users management
+ - improve isolates associated metadata
+ - improve api user inputs sanitization
 
-### Fields accepted to POST:
-##### Species:
- - name
-##### Schema:
- - id
- - loci
- - description
-##### Loci:
- - id
- - aliases
- - allele_number
-##### Allele:
- - id
- - time_stamp
- - sequence
-
-Taking the field above in consideration, we can insert (POST) data using curl like so:
-1. Species:
-	> curl -i  http://localhost:5000/NS/species -d 'name=acinetobacter'
-2. Schema:
-	> curl -i http://localhost:5000/NS/species/bacteria/schema -d 'id=3' -d 'loci=XXXX' -d 'description=Acinetobacter spp.'
-3. Loci:
-	> curl -i http://localhost:5000/NS/species/bacteria/loci -d 'id=1' -d 'aliases=lociful' -d 'allele_number=40'
-4. Allele:
-	> curl -i http://localhost:5000/NS/species/bacteria/loci/1/alleles -d 'id=5' -d 'time_stamp=2017-07-24T17:16:59.688836' -d 'sequence=ACTCTGT'
-
-
-# Props to
-Bruno Gonçalves, João Carriço, Mickael Silva and Tiago Jesus for the support on the development of this app.

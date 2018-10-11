@@ -1,5 +1,5 @@
 import datetime
-from app import db, app, virtuoso_server,uniprot_server, celery
+from app import db, app, virtuoso_server,uniprot_server, celery, dbpedia_server
 from flask import abort,g,request, Response, stream_with_context, send_from_directory
 from flask_restful import Resource, reqparse, marshal, fields
 from app.models.models import User, Role, Auxiliar
@@ -55,6 +55,7 @@ def get_data(server,sparql_query):
 		
 	return result
 
+#query when sequence is too large needs to be a POST
 def send_big_query(server,sparql_query):
 	try:
 		server.setQuery(sparql_query)
@@ -360,39 +361,11 @@ class profile(Resource):
 				
 			else:
 				#num_isolates-=1    
-				return "Profile not uploaded, not enough alleles", 200
+				return "Profile not uploaded, not enough alleles at "+isolateUri, 200
 		
 		
 		return report
 
-#~ class createUser(Resource):
-	#~ @auth_token_required
-	#~ def get(self):
-		#~ 
-		#~ new_mail='admin@ns.com'
-		#~ new_pass='dfgvxc234gefg34qweqwesdfsqweqwe'
-		#~ if not user_datastore.get_user(new_mail):
-			#~ user_datastore.create_user(email=new_mail, password=new_pass)
-			#~ db.session.commit()
-			#~ userid=user_datastore.get_user(new_mail).id
-			#~ new_user_url=baseURL+"users/"+str(userid)
-			#~ result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>.}')
-			#~ r = requests.post('http://127.0.0.1:5000/login', data=json.dumps({'email':new_mail, 'password':new_pass}), headers={'content-type': 'application/json'})
-			#~ print (r.json())
-			#~ if result.status_code == 201 :
-				#~ return "User created", 201		
-			#~ else:
-				#~ return "Sum Thing Wong", result.status_code
-		#~ 
-		#~ r = requests.post('http://127.0.0.1:5000/login', data=json.dumps({'email':new_mail, 'password':new_pass}), headers={'content-type': 'application/json'})
-		#~ print (r.json())
-		#~ return 'user already created'
-	
-	#~ @auth_token_required
-	#~ def post(self):
-		#~ lala=g.identity.user.id
-		#~ 
-		#~ return lala
 
 
 #@app.route('/NS/species') 
@@ -543,7 +516,8 @@ class SchemaLociAPItypon(Resource):
 		if dateAux:
 			#print('select ?locus_name ?allele_id ?sequence where { { select ?locus_name ?allele_id ?sequence where {<'+new_schema_url+'> typon:hasSchemaPart ?part. ?part typon:hasLocus ?locus . ?alleles typon:isOfLocus ?locus ; typon:dateEntered ?date; typon:hasSequence ?sequence; typon:id ?allele_id. ?locus typon:name ?locus_name. FILTER ( ?date >= "'+dateAux+'"^^xsd:dateTime ). FILTER NOT EXISTS { ?part typon:deprecated  "true"^^xsd:boolean }.}order by ASC(?date)}} LIMIT 25000')
 			result = get_data(virtuoso_server,'select ?locus_name ?allele_id ?sequence where { { select ?locus_name ?allele_id ?sequence where {<'+new_schema_url+'> typon:hasSchemaPart ?part. ?part typon:hasLocus ?locus . ?alleles typon:isOfLocus ?locus ; typon:dateEntered ?date; typon:hasSequence ?sequence; typon:id ?allele_id. ?locus typon:name ?locus_name. FILTER ( ?date > "'+dateAux+'"^^xsd:dateTime ). FILTER NOT EXISTS { ?part typon:deprecated  "true"^^xsd:boolean }.}order by ASC(?date)}} LIMIT 100000')
-		
+			if len(result["results"]["bindings"])<1:
+				return {"newAlleles":[{'date':str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))}],}
 			#get the latest allele date
 			latestAllele=(result["results"]["bindings"])[-1]
 			geneFasta=latestAllele['locus_name']['value']
@@ -809,7 +783,7 @@ class LociListAPItypon(Resource):
 			try:
 				def generate():
 					yield '{"Loci": ['
-					prev_item=result["results"]["bindings"][0]
+					prev_item=result["results"]["bindings"].pop(0)
 					for item in result["results"]["bindings"]:
 						yield json.dumps(prev_item)+','
 						prev_item = item
@@ -827,6 +801,9 @@ class LociListAPItypon(Resource):
 	@auth_token_required
 	def post(self, spec_id):
 		args = self.reqparse.parse_args(strict=True)
+		
+		locus_ori_name=args['locus_ori_name']
+		
 		try:
 			check_len(args['prefix'])
 		except:
@@ -920,7 +897,7 @@ class LociFastaAPItypon(Resource):
 				try:
 					def generate():
 						yield '{"Fasta": ['
-						prev_item=result["results"]["bindings"][0]
+						prev_item=result["results"]["bindings"].pop(0)
 						for item in result["results"]["bindings"]:
 							yield json.dumps(prev_item)+','
 							prev_item = item
@@ -944,11 +921,57 @@ class LociFastaAPItypon(Resource):
 		try:
 			def generate():
 				yield '{"Fasta": ['
-				prev_item=result["results"]["bindings"][0]
+				prev_item=result["results"]["bindings"].pop(0)
 				for item in result["results"]["bindings"]:
 					yield json.dumps(prev_item)+','
 					prev_item = item
 				yield json.dumps(prev_item)+']}'
+			
+			return Response(stream_with_context(generate()), content_type='application/json')
+		
+		
+		except:
+			return []
+		return result["results"]["bindings"]
+
+#@app.route('/NS/species/<int:spec_id>/loci/<int:id>/uniprot')
+class LociUniprotAPItypon(Resource):
+	# curl -i  http://localhost:5000/NS/species/1/loci/7/uniprot
+	def get(self, spec_id, id):
+		
+		spec_url=baseURL+"species/"+str(spec_id)
+		result = get_data(virtuoso_server,'ASK where { <'+spec_url+'> a <http://purl.uniprot.org/core/Taxon>}')
+		
+		if not result['boolean'] :
+			return "Species not found", 404
+		
+		new_locus_url=baseURL+"species/"+str(spec_id)+"/loci/"+str(id)
+		result = get_data(virtuoso_server,'select (str(?UniprotLabel) as ?UniprotLabel) (str(?UniprotURI) as ?UniprotURI) where { <'+new_locus_url+'> a typon:Locus; typon:name ?name. ?alleles typon:isOfLocus <'+new_locus_url+'> .?alleles typon:hasSequence ?sequence. OPTIONAL{?sequence typon:hasUniprotLabel ?UniprotLabel.} OPTIONAL{?sequence typon:hasUniprotSequence ?UniprotURI }}')
+		#~ response=result["results"]["bindings"]
+		
+		#~ for allele in response:
+			#~ print (allele['allele_id']['value'])
+			#~ print (allele['nucSeq']['value'])
+		
+		#sometimes virtuoso returns an error "Max row length is exceeded when trying to store a string of" due to the sequences being too
+		#large, if it happens there is a way around
+		try:
+			result["results"]["bindings"]
+		except:
+			#virtuoso returned an error, if it excedeed length request each allele one at a time
+			
+			return []
+		
+		try:
+			def generate():
+				yield '{"UniprotInfo": ['
+				prev_item=result["results"]["bindings"].pop(0)
+				for item in result["results"]["bindings"]:
+					if len(prev_item.keys())>0:
+						yield json.dumps(prev_item)+','
+					prev_item = item
+				yield json.dumps(prev_item)+']}'
+
 			
 			return Response(stream_with_context(generate()), content_type='application/json')
 		
@@ -967,6 +990,7 @@ class LociAPItypon(Resource):
 
 		response=result["results"]["bindings"]
 		response.append({'alleles':new_locus_url+'/alleles'})
+		response.append({'niprotInfo':new_locus_url+'/uniprot'})
 		try:
 			
 			return (response)
@@ -1262,18 +1286,20 @@ class IsolatesListAPItypon(Resource):
 			pass
 		
 		#if isolate name is provided return that isolate, else return all isolates
+		#if number of isolates >100000 either increase the number of rows the virtuoso return or use the dateEntered property 
+		#and make multiple queries to virtuoso based on the date until all have been fetched
 		if isolName:
 			new_spec_url=baseURL+"species/"+str(spec_id)
 			result = get_data(virtuoso_server,'select ?isolate where { ?isolate a typon:Isolate; typon:isFromTaxon <'+new_spec_url+'>; typon:name "'+isolName+'"^^xsd:string.}')
 		else:
 			new_spec_url=baseURL+"species/"+str(spec_id)
-			result = get_data(virtuoso_server,'select ?isolate ?name where { ?isolate a typon:Isolate; typon:isFromTaxon <'+new_spec_url+'>; typon:name ?name. }')
+			result = get_data(virtuoso_server,'select ?isolate ?name where { ?isolate a typon:Isolate; typon:isFromTaxon <'+new_spec_url+'>; typon:name ?name. }LIMIT 100000')
 		
 		#isolates number can grow quickly, stream response is default
 		try:
 			def generate():
 				yield '{"Isolates": ['
-				prev_item=result["results"]["bindings"][0]
+				prev_item=result["results"]["bindings"].pop(0)
 				for item in result["results"]["bindings"]:
 					yield json.dumps(prev_item)+','
 					prev_item = item
@@ -1286,7 +1312,7 @@ class IsolatesListAPItypon(Resource):
 		except:
 			return []
 
-#@app.route('/NS/species/<int:spec_id>/isolates/<string:isol_id>')
+#@app.route('/NS//isolates/<string:isol_id>')
 class IsolatesAPItypon(Resource):
 	# curl -i  http://localhost:5000/NS/isolates/<string:isol_id>
 	def __init__(self):
@@ -1308,7 +1334,7 @@ class IsolatesAPItypon(Resource):
 	def get(self, isol_id):
 		
 		new_isol_url=baseURL+"isolates/"+str(isol_id)
-		result = get_data(virtuoso_server,'select ?name ?country ?accession ?ST  where { <'+new_isol_url+'> a typon:Isolate; typon:name ?name. OPTIONAL{<'+new_isol_url+'> typon:country ?country.}OPTIONAL{<'+new_isol_url+'> typon:accession ?accession.}OPTIONAL{<'+new_isol_url+'> typon:ST ?ST.}  }')
+		result = get_data(virtuoso_server,'select ?name ?country ?country_name ?accession ?st ?date_entered  where { <'+new_isol_url+'> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered. OPTIONAL{<'+new_isol_url+'> typon:isolatedAt ?country. ?country rdfs:label ?country_name}OPTIONAL{<'+new_isol_url+'> typon:accession ?accession.}OPTIONAL{<'+new_isol_url+'> typon:st ?st.}  }')
 		try:
 			return (result["results"]["bindings"])
 		except:
@@ -1325,37 +1351,60 @@ class IsolatesAPItypon(Resource):
 			return "Isolate not found", 404
 		
 		#check if isolate exist
-		result = get_data(virtuoso_server,'ASK where { <'+new_isol_url+'> typon:country ?country.}')
+		result = get_data(virtuoso_server,'ASK where { <'+new_isol_url+'> typon:isolatedAt ?country.}')
 		if result['boolean'] :
 			return "Isolate already has metada", 409
 		
 		#check if isolate belongs to the user that is submitting the post
 		userid=g.identity.user.id
-		#~ userid=1
 		new_user_url=baseURL+"users/"+str(userid)
 		result = get_data(virtuoso_server,'ASK where { <'+new_isol_url+'> typon:sentBy <'+new_user_url+'>.}')
 		if not result['boolean'] :
 			return "Isolate not yours", 403
 		
+		#search for country on dbpedia
+		query='select  ?country ?label where {?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheUnitedNations>; a dbo:Country; <http://www.w3.org/2000/01/rdf-schema#label> ?label. FILTER (lang(?label) = "en") FILTER (STRLANG("'+(args['country']).lower()+'", "en") = LCASE(?label) ) }'
+		print ("searching on dbpedia..")
+		
+		result = get_data(dbpedia_server,query)
+		print(result)
+		try:
+			country_url=result["results"]["bindings"][0]['country']['value']
+			label=result["results"]["bindings"][0]['label']['value']
+			
+		except:
+			try:
+				query='select  ?country ?label where {?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheUnitedNations>; <http://www.w3.org/2000/01/rdf-schema#label> ?label; a dbo:Country; dbo:longName ?longName. FILTER (lang(?longName) = "en") FILTER (STRLANG("'+(args['country']).lower()+'", "en") = LCASE(?longName) ) }'
+		
+				print ("searching on dbpedia for the long name..")
+				result = get_data(dbpedia_server,query)
+				country_url=result["results"]["bindings"][0]['country']['value']
+				label=result["results"]["bindings"][0]['label']['value']
+			except:
+				return "country name not found on dbpedia, search on http://dbpedia.org/page/Category:Member_states_of_the_United_Nations", 404 
+		
+		
 		#if metadata provided, insert in RDF
 		data2send=''
+		data2sendlist=[]
 		try:
-			data2send+=' typon:accession <'+args['accession']+'>;'
+			data2sendlist.append(' typon:accession "'+args['accession']+'"^^xsd:string')
 		except:
 			pass
 		try:
-			data2send+=' typon:ST "'+args['mlstst']+'"^^xsd:integer;'
+			data2sendlist.append(' typon:st "'+args['mlstst']+'"^^xsd:integer')
 		except:
 			pass
 		try:
-			data2send+=' typon:country "'+args['country']+'"^^xsd:string.'
+			data2sendlist.append('typon:isolatedAt <'+country_url+'>.<'+country_url+'> rdfs:label "'+label+'"@en')
 		except:
 			pass
 
 			
-		if not data2send=='':
+		if len(data2sendlist)>0:
 			
-			result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_isol_url+'>'+data2send+'}')
+			rdf2send=";".join(data2sendlist)
+			result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_isol_url+'>'+rdf2send+'.}')
 			
 			if result.status_code > 201 :
 				return "Sum Thing Wong uploading metadata to isolate", result.status_code

@@ -3,11 +3,12 @@ from flask_restful import Api
 from app.resources.resources_ngsonto import NS, profile
 from app.resources.resources_ngsonto import SpeciesListAPItypon, SpeciesAPItypon
 from app.resources.resources_ngsonto import SchemaListAPItypon, SchemaLociAPItypon, SchemaAPItypon, SchemaZipAPItypon
-from app.resources.resources_ngsonto import LociListAPItypon, LociAPItypon, LociFastaAPItypon, LociSequencesAPItypon
+from app.resources.resources_ngsonto import LociListAPItypon, LociAPItypon, LociFastaAPItypon, LociSequencesAPItypon, LociUniprotAPItypon
 from app.resources.resources_ngsonto import AlleleListAPItypon, AlleleAPItypon, SequencesAPItypon, SequencesListAPItypon
 from app.resources.resources_ngsonto import IsolatesAPItypon, IsolatesAllelesAPItypon, IsolatesListAPItypon, IsolatesProfileAPItypon
 
-version="/v1"
+#version="/v1"
+version="/"+app.config['API_VERSION']
 
 ## API Setup ##
 api = Api(app)
@@ -59,6 +60,10 @@ api.add_resource(LociAPItypon,
 api.add_resource(LociFastaAPItypon,
 				version+'/NS/species/<int:spec_id>/loci/<int:id>/fasta',
 				endpoint='lociFasta')
+
+api.add_resource(LociUniprotAPItypon,
+				version+'/NS/species/<int:spec_id>/loci/<int:id>/uniprot',
+				endpoint='lociUniprot')
 
 api.add_resource(AlleleListAPItypon,
 				version+'/NS/species/<int:spec_id>/loci/<int:loci_id>/alleles',
