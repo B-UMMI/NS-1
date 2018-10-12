@@ -34,7 +34,7 @@ Other dists (see <http://vos.openlinksw.com/owiki/wiki/VOS>).
 	4. start manually virtuoso (use it in a screen environment)
 `sudo virtuoso-t -fd`
 	5. configuring your virtuoso instance
-check http://localhost/8000 on your browser and go to conductor, default admin of virtuoso is set as u:dba p:dba
+check http://localhost/8890 on your browser and go to conductor, default admin of virtuoso is set as u:dba p:dba
 **change the password** of dba at "system admin" -> "user accounts". Also change the user "demo" password (default password is "demo" and **should be changed**). The "demo" user will be the one used to contact with the Nomenclature server application.
 
 3. Install nginx
