@@ -64,12 +64,12 @@ Enable new configuration by creating a symbolic link in sites-enabled directory.
 4. Install redis for queue management
 `sudo apt install redis-server`
 
-5. Install postgres and create a new database called "test" with password "postgres" (change at your own preference):
-`sudo -i -u postgres`
-`psql`
-`CREATE database test;`
-#change password
-`\password postgres`
+5. Install postgres and create a new database called "test" with password "postgres" (change at your own preference):  
+`sudo -i -u postgres`  
+`psql`  
+`CREATE database test;`  
+#change password  
+`\password postgres`  
 
 6. Configure the app
    1. (Optional/Recommended) On the app folder run 'python3 -m venv flask' (or 'python' as long as it's calling version 3.xxx)
