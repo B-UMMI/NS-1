@@ -3,6 +3,7 @@
 from Bio.Seq import Seq
 from Bio import SeqIO
 from Bio.Alphabet import generic_dna
+
 import os
 import argparse
 #import datetime
@@ -19,8 +20,47 @@ from app import app
 baseURL=app.config['BASE_URL']
 
 
+def translateSeq(DNASeq):
+
+    seq = DNASeq
+    tableid = 11
+    try:
+        myseq = Seq(seq)
+        protseq = Seq.translate(myseq, table=tableid, cds=True)
+    except:
+        try:
+            seq = reverseComplement(seq)
+            myseq = Seq(seq)
+            protseq = Seq.translate(myseq, table=tableid, cds=True)
+        except:
+            try:
+                seq = seq[::-1]
+                myseq = Seq(seq)
+                protseq = Seq.translate(myseq, table=tableid, cds=True)
+            except:
+                try:
+                    seq = seq[::-1]
+                    seq = reverseComplement(seq)
+                    myseq = Seq(seq)
+                    protseq = Seq.translate(myseq, table=tableid, cds=True)
+                except Exception as e:
+                    #~ print("translation error")
+                    #~ print(e)
+                    raise
+
+    return myseq
+
+def reverseComplement(strDNA):
+    basecomplement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+    strDNArevC = ''
+    for l in strDNA:
+        strDNArevC += basecomplement[l]
+
+    return strDNArevC[::-1]
+
 
 def send_post(loci_uri,sequence,token):
+	
 	params = {}
 	params['sequence'] = sequence
 	headers={'Authentication-Token': token}
@@ -29,14 +69,19 @@ def send_post(loci_uri,sequence,token):
 	req_success=False
 	sleepfactor=4
 	while not req_success:
-	
-		r = requests.post(url, data=params,headers=headers,timeout=30)
-		if r.status_code > 201:
-			print("failed sending sequence, retrying in seconds "+str(sleepfactor))
+		try:
+			r = requests.post(url, data=params,headers=headers,timeout=30)
+			if r.status_code > 201:
+				print(r)
+				print("failed sending sequence, retrying in seconds "+str(sleepfactor))
+				time.sleep(sleepfactor)
+				sleepfactor=sleepfactor*2
+			else:
+				req_success=True
+		except:
 			time.sleep(sleepfactor)
 			sleepfactor=sleepfactor*2
-		else:
-			req_success=True
+			pass
 	
 	req_code=int(r.status_code)
 	#~ allele_url=((r.content).decode("utf-8")).replace('"', '').strip()
@@ -76,7 +121,13 @@ def send_sequence(token,sequence,loci_uri):
 def process_locus(gene,token,loci_url,auxBar):
 	
 	for allele in SeqIO.parse(gene, "fasta", generic_dna):
+
 		sequence=(str(allele.seq)).upper()
+		try:
+			sequence=translateSeq(sequence)
+			sequence=str(sequence)
+		except:
+			continue
 		
 		reqCode=send_sequence(token,sequence,loci_url)
 	
@@ -124,7 +175,8 @@ def main():
 	parser.add_argument('--sname', nargs='?', type=str, help='schema name', required=True)
 	parser.add_argument('--sprefix', nargs='?', type=str, help='loci prefix, for instance ACIBA will produce ACIBA00001.fasta', required=True)
 	parser.add_argument('--cpu', nargs='?', type=int, help='number of cpu', required=False, default=1)
-	parser.add_argument('--keep', nargs='?', type=str, help='store original fasta name too', required=False,default=False)
+	parser.add_argument('--keep', help='store original fasta name too', required=False,default=False,action='store_true')
+	parser.add_argument('--cont', help='use this flag to continue a schema upload that crashed in between', required=False,default=False,action='store_true')
 
 	args = parser.parse_args()
 	geneFiles = args.i
@@ -135,6 +187,8 @@ def main():
 	schema_prefix = args.sprefix
 	cpu2Use=args.cpu
 	keepFileName=args.keep
+	continue_previous_upload=args.cont
+	
 
 	#check if user provided a list of genes or a folder
 	geneFiles = check_if_list_or_folder(geneFiles)
@@ -169,6 +223,11 @@ def main():
 	url = baseURL+"species/"+species+"/schemas"
 	r = requests.post(url, data=params,headers=headers)
 	#~ print (r)
+	
+	if r.status_code >201:
+		print("something went wrond, species probably not existant")
+		return 
+	
 	schema_url= r.text.replace('"', '').strip()
 		
 	#get all loci from schema
@@ -202,38 +261,46 @@ def main():
 		
 		#check if locus is already on the species database, the program crashed before uploading all the fasta or something
 		loci_url=False
-		try:
-			for allele in SeqIO.parse(gene, "fasta", generic_dna):
-				
-				sequence=(str(allele.seq)).upper()
-				params = {}
-				params['sequence'] = sequence
-				
-				#request is done for the 1st allele sequence
-				sucess_send = False
-				waitFactor = 4
-				while not sucess_send:
-					r = requests.get(url,data=params,timeout=30)
+		
+		if continue_previous_upload:
+			try:
+				for allele in SeqIO.parse(gene, "fasta", generic_dna):
 					
-					if r.status_code >201:
-						print("Server returned code " + str(req_code))
-						print("Retrying in seconds "+str(waitFactor))
-						time.sleep(waitFactor)
-						waitFactor = waitFactor * 2
-					else:
-						sucess_send=True
+					sequence=(str(allele.seq)).upper()
+					try:
+						sequence=translateSeq(sequence)
+						sequence=str(sequence)
+					except:
+						continue
 					
-					req_code = int(r.status_code)
-					result=r.json()
-				
-				#if try sucessfull, the locus is already on the species database, except will continue to start adding the locus to the server
-				try:
-					loci_url=result[0]['locus']['value']
-				except:
-					pass
-				break
-		except:
-			continue
+					params = {}
+					params['sequence'] = sequence
+					
+					#request is done for the 1st allele sequence
+					sucess_send = False
+					waitFactor = 4
+					while not sucess_send:
+						r = requests.get(url,data=params,timeout=30)
+						
+						if r.status_code >201:
+							print("Server returned code " + str(req_code))
+							print("Retrying in seconds "+str(waitFactor))
+							time.sleep(waitFactor)
+							waitFactor = waitFactor * 2
+						else:
+							sucess_send=True
+						
+						req_code = int(r.status_code)
+						result=r.json()
+					
+					#if try sucessfull, the locus is already on the species database, except will continue to start adding the locus to the server
+					try:
+						loci_url=result[0]['locus']['value']
+					except:
+						pass
+					break
+			except:
+				continue
 		
 		#name=os.path.basename(gene)
 		#print (name)
@@ -244,6 +311,8 @@ def main():
 			params = {}
 			params['prefix'] = schema_prefix
 			headers = {'Authentication-Token': token}
+			if keepFileName:
+				params['locus_ori_name'] = os.path.basename(gene)
 			
 			sucess_send = False
 			waitFactor = 4
@@ -276,8 +345,7 @@ def main():
 			params = {}
 			params['loci_id'] = new_loci_id
 			
-			if keepFileName:
-				params['locus_ori_name'] = os.path.basename(gene)
+			
 
 			url = schema_url+"/loci"
 			

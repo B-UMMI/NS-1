@@ -24,12 +24,19 @@ url_send_local_virtuoso=app.config['URL_SEND_LOCAL_VIRTUOSO']
 
 #### ---- AUX FUNCTIONS ---- ###
 
+def sanitize_input(mystring):
+	print ("sanitizing")
+	mystring=mystring.replace("'", "")
+	mystring=mystring.encode('ascii', 'ignore')
+	mystring=mystring.decode("utf-8")
+	mystring=mystring.replace("\\", "") 
+	return mystring
 
 def send_data(sparql_query):
 	url = url_send_local_virtuoso
 	headers = {'content-type': 'application/sparql-query'}
 	r = requests.post(url, data=sparql_query, headers=headers, auth=requests.auth.HTTPBasicAuth(virtuoso_user, virtuoso_pass))
-
+		
 	#sometimes virtuoso returns 405 God knows why ¯\_(ツ)_/¯ retry in 2 sec
 	if r.status_code >201:
 		time.sleep(2)
@@ -42,13 +49,14 @@ def get_data(server,sparql_query):
 	try:
 		server.setQuery(sparql_query)
 		server.setReturnFormat(JSON)
-		server.setTimeout(40)
+		server.setTimeout(20)
 		result = server.query().convert()
 	except Exception as e:
 		time.sleep(5)
 		try:
 			server.setQuery(sparql_query)
 			server.setReturnFormat(JSON)
+			server.setTimeout(20)
 			result = server.query().convert()
 		except Exception as e:
 			result=e
@@ -101,7 +109,7 @@ def add_allele(new_locus_url,spec_id,loci_id,new_user_url,new_seq_url,isNewSeq,a
 		result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_allele_url+'> a typon:Allele; typon:sentBy  <'+new_user_url+'> ;typon:isOfLocus <'+new_locus_url+'>; typon:dateEntered "'+str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))+'"^^xsd:dateTime; typon:id "'+str(number_alleles_loci+1)+'"^^xsd:integer ; typon:hasSequence <'+new_seq_url+'>. <'+new_locus_url+'> typon:hasDefinedAllele <'+new_allele_url+'>.}')
 	
 	if result.status_code > 201 :
-		return "Sum Thing Wong creating sequence", result.status_code
+		return "Sum Thing Wong creating sequence 1", result.status_code
 	else:
 		return new_allele_url, result.status_code
 
@@ -548,8 +556,26 @@ class SchemaLociAPItypon(Resource):
 		else:
 			result = get_data(virtuoso_server,'select ?locus (str(?name) as ?name) where { <'+new_schema_url+'> typon:hasSchemaPart ?part. ?part typon:hasLocus ?locus.?locus typon:name ?name. FILTER NOT EXISTS { ?part typon:deprecated  "true"^^xsd:boolean } }order by (?name) ')
 		try:
-			final_result=result["results"]["bindings"]+[str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))]
-			return result["results"]["bindings"]+[str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))]
+			#~ final_result=result["results"]["bindings"]+[str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))]
+			#~ return result["results"]["bindings"]+[str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))]
+			
+			#return in stream mode
+			try:
+				
+				latestDatetime=str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))
+				def generate():
+					yield '{"Loci": ['
+					for item in result["results"]["bindings"]:
+						yield json.dumps(item)+','
+					yield json.dumps({'date':latestDatetime})+']}'
+				
+				
+				
+				return Response(stream_with_context(generate()), content_type='application/json')
+					
+			except :
+				return []
+				
 		except:
 			return []
 		
@@ -607,7 +633,7 @@ class SchemaLociAPItypon(Resource):
 		if process_result_status_code > 201 :
 			
 			#check if process was sucessfull
-			return "Sum Thing Wong creating sequence", process_result_status_code
+			return "Sum Thing Wong creating sequence 2", process_result_status_code
 		else:
 			return new_allele_url, process_result_status_code
 		
@@ -778,7 +804,7 @@ class LociListAPItypon(Resource):
 				return []
 		
 		else:
-			result = get_data(virtuoso_server,'select (str(?name) as ?name) ?locus where { ?locus a typon:Locus; typon:isOfTaxon <'+spec_url+'>; typon:name ?name.  }')
+			result = get_data(virtuoso_server,'select (str(?name) as ?name) ?locus (str(?original_name) as ?original_name) where { ?locus a typon:Locus; typon:isOfTaxon <'+spec_url+'>; typon:name ?name. OPTIONAL{?locus typon:originalName ?original_name.} }')
 			
 			try:
 				def generate():
@@ -803,6 +829,7 @@ class LociListAPItypon(Resource):
 		args = self.reqparse.parse_args(strict=True)
 		
 		locus_ori_name=args['locus_ori_name']
+		print(locus_ori_name)
 		
 		try:
 			check_len(args['prefix'])
@@ -986,7 +1013,7 @@ class LociAPItypon(Resource):
 	def get(self, spec_id, id):
 		
 		new_locus_url=baseURL+"species/"+str(spec_id)+"/loci/"+str(id)
-		result = get_data(virtuoso_server,'select (str(?name) as ?name) (COUNT(?alleles) as ?number_alleles) (AVG(strlen(str(?nucSeq)))as ?average_length) (MIN(strlen(str(?nucSeq)))as ?min_length) (MAX(strlen(str(?nucSeq)))as ?max_length) where { <'+new_locus_url+'> a typon:Locus; typon:name ?name; typon:hasDefinedAllele ?alleles.?alleles typon:hasSequence ?sequence.?sequence typon:nucleotideSequence ?nucSeq.}')
+		result = get_data(virtuoso_server,'select (str(?name) as ?name) (str(?original_name) as ?original_name) (COUNT(?alleles) as ?number_alleles) (AVG(strlen(str(?nucSeq)))as ?average_length) (MIN(strlen(str(?nucSeq)))as ?min_length) (MAX(strlen(str(?nucSeq)))as ?max_length) where { <'+new_locus_url+'> a typon:Locus; typon:name ?name; typon:hasDefinedAllele ?alleles.?alleles typon:hasSequence ?sequence.?sequence typon:nucleotideSequence ?nucSeq. OPTIONAL{<'+new_locus_url+'> typon:originalName ?original_name.}}')
 
 		response=result["results"]["bindings"]
 		response.append({'alleles':new_locus_url+'/alleles'})
@@ -1084,6 +1111,7 @@ class AlleleListAPItypon(Resource):
 			
 			#check if sequence exists in uniprot
 			add2send2graph=''
+			print("check if in uniprot")
 			try:
 				
 				# try to translate the sequence and check if is a CDS and build the RDF with the info on uniprot
@@ -1097,12 +1125,14 @@ class AlleleListAPItypon(Resource):
 				add2send2graph+='; typon:hasUniprotSequence <'+url+'>'
 				try:
 					url2=result2["results"]["bindings"][0]['label']['value']
+					url2=sanitize_input(url2)
 					add2send2graph+='; typon:hasUniprotLabel "'+url2+'"^^xsd:string'
 				except:
 					print ("no label associated")
 					pass
 				try:
 					url2=result["results"]["bindings"][0]['sname']['value']
+					url=sanitize_input(url2)
 					rdf_2_ins+='; typon:hasUniprotSName "'+url2+'"^^xsd:string'
 				except:
 					#~ print ("no submitted name associated")
@@ -1161,7 +1191,7 @@ class AlleleListAPItypon(Resource):
 					if process_result_status_code > 201 :
 						
 						#check if process was sucessfull
-						return "Sum Thing Wong creating sequence", process_result_status_code
+						return "Sum Thing Wong creating sequence 3", process_result_status_code
 					else:
 						return new_allele_url, process_result_status_code
 					
@@ -1193,7 +1223,7 @@ class AlleleListAPItypon(Resource):
 				if process_result_status_code > 201 :
 					
 					#check if process was sucessfull
-					return "Sum Thing Wong creating sequence", process_result_status_code
+					return "Sum Thing Wong creating sequence 4", process_result_status_code
 				else:
 					return new_allele_url, process_result_status_code
 				
