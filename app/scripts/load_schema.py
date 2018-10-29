@@ -6,8 +6,7 @@ from Bio.Alphabet import generic_dna
 
 import os
 import argparse
-#import datetime
-#~ from SPARQLWrapper import SPARQLWrapper,JSON
+
 import requests
 import time
 import multiprocessing
@@ -59,10 +58,14 @@ def reverseComplement(strDNA):
     return strDNArevC[::-1]
 
 
-def send_post(loci_uri,sequence,token):
+def send_post(loci_uri,sequence,token,noCDSCheck):
 	
 	params = {}
 	params['sequence'] = sequence
+	
+	if not noCDSCheck:
+		params['enforceCDS'] = "False"
+	
 	headers={'Authentication-Token': token}
 	url = loci_uri+"/alleles"
 		
@@ -88,14 +91,14 @@ def send_post(loci_uri,sequence,token):
 	
 	return req_code
 
-def send_sequence(token,sequence,loci_uri):
+def send_sequence(token,sequence,loci_uri,noCDSCheck):
 		
 	
 	req_success=False
 	sleepfactor=4
 	while not req_success:
 	
-		reqCode=send_post(loci_uri,sequence,token)
+		reqCode=send_post(loci_uri,sequence,token,noCDSCheck)
 		if reqCode > 201:
 			print("failed, retrying in seconds "+str(sleepfactor))
 			time.sleep(sleepfactor)
@@ -118,7 +121,7 @@ def send_sequence(token,sequence,loci_uri):
 	
 	return reqCode
 
-def process_locus(gene,token,loci_url,auxBar):
+def process_locus(gene,token,loci_url,auxBar,noCDSCheck):
 	
 	for allele in SeqIO.parse(gene, "fasta", generic_dna):
 
@@ -129,7 +132,7 @@ def process_locus(gene,token,loci_url,auxBar):
 		except:
 			continue
 		
-		reqCode=send_sequence(token,sequence,loci_url)
+		reqCode=send_sequence(token,sequence,loci_url,noCDSCheck)
 	
 	if gene in auxBar:
 		auxlen = len(auxBar)
@@ -170,24 +173,24 @@ def main():
 		description="This program loads a schema to the nomenclature server, given the fasta files")
 	parser.add_argument('-i', nargs='?', type=str, help='path to folder containg the schema fasta files ( alternative a list of fasta files)', required=True)
 	parser.add_argument('-sp', nargs='?', type=str, help='species id', required=True)
-	#~ parser.add_argument('-sc', nargs='?', type=str, help='schema id', required=True)
 	parser.add_argument('-t', nargs='?', type=str, help='token', required=True)
 	parser.add_argument('--sname', nargs='?', type=str, help='schema name', required=True)
 	parser.add_argument('--sprefix', nargs='?', type=str, help='loci prefix, for instance ACIBA will produce ACIBA00001.fasta', required=True)
 	parser.add_argument('--cpu', nargs='?', type=int, help='number of cpu', required=False, default=1)
 	parser.add_argument('--keep', help='store original fasta name too', required=False,default=False,action='store_true')
+	parser.add_argument('--notCDS', help='store original fasta name too', required=False,default=False,action='store_false')
 	parser.add_argument('--cont', help='use this flag to continue a schema upload that crashed in between', required=False,default=False,action='store_true')
 
 	args = parser.parse_args()
 	geneFiles = args.i
 	species = args.sp
-	#~ schema = args.sc
 	token = args.t
 	schema_name = args.sname
 	schema_prefix = args.sprefix
 	cpu2Use=args.cpu
 	keepFileName=args.keep
 	continue_previous_upload=args.cont
+	noCDSCheck=args.notCDS
 	
 
 	#check if user provided a list of genes or a folder
@@ -217,7 +220,7 @@ def main():
 	
 	#create new schema called wgMLST and get schema id
 	params = {}
-	params['description'] = schema_name
+	params['name'] = schema_name
 	headers = {'Authentication-Token': token}
 
 	url = baseURL+"species/"+species+"/schemas"
@@ -361,7 +364,7 @@ def main():
 				else:
 					req_success=True
 			
-		p = pool.apply_async(process_locus, args=[gene,token,loci_url,auxBar])
+		p = pool.apply_async(process_locus, args=[gene,token,loci_url,auxBar,noCDSCheck])
 	   
 	pool.close()
 	pool.join()

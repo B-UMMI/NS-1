@@ -4,6 +4,9 @@ import os
 import argparse
 import requests
 import time
+import sys
+path_2_app=os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+sys.path.append(path_2_app)
 from app import app
 
 baseURL=app.config['BASE_URL']
@@ -42,7 +45,7 @@ def main():
 	r = requests.get(allLociList)
 	result=r.json()
     
-	
+	result=result["Loci"]
     
 	for locus in result:
 		dictLoci[str(locus['name']['value'])]=str(locus['locus']['value'])
@@ -51,7 +54,7 @@ def main():
     
     #create new schema called wgMLST and get schema id
 	params = {}
-	params['description'] = schema_name
+	params['name'] = schema_name
 	headers = {'Authentication-Token': token}
 #~ 
 	url = baseURL+"species/"+species+"/schemas"
@@ -73,7 +76,7 @@ def main():
 
 		url = schema_url+"/loci"
         
-        req_success=False
+		req_success=False
 		sleepfactor=4
 		while not req_success:
 		
