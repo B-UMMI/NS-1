@@ -282,7 +282,7 @@ class profile(Resource):
 			#~ if not isolateUri==False:
 				#~ rdf_2_ins+='<'+isolateUri+'>'
 			#~ else:
-			isolateUri=baseURL+'isolates/'+str(new_isolate_id)
+			isolateUri=new_spec_url+'/isolates/'+str(new_isolate_id)
 			rdf_2_ins+='<'+isolateUri+'> a typon:Isolate;\ntypon:name "'+genomeName+'"^^xsd:string; typon:sentBy <'+new_user_url+'>; typon:dateEntered "'+str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))+'"^^xsd:dateTime; typon:isFromTaxon <'+new_spec_url+'>;'
 			i=0
 			hasAlleles=0
@@ -381,7 +381,7 @@ class SpeciesListAPItypon(Resource):
 	# curl -i  http://localhost:5000/NS/species
 	def get(self):
 
-		result = get_data(virtuoso_server,'select ?species ?name where { ?species owl:sameAs ?species2; a <http://purl.uniprot.org/core/Taxon>; typon:name ?name. } LIMIT 20')
+		result = get_data(virtuoso_server,'select ?species ?name where { ?species owl:sameAs ?species2; a <http://purl.uniprot.org/core/Taxon>; typon:name ?name. } LIMIT 100')
 		return (result["results"]["bindings"])
 
 	# curl -i  http://localhost:5000/NS/species -d 'name=bacteria'
@@ -1388,7 +1388,7 @@ class IsolatesListAPItypon(Resource):
 		except:
 			return []
 
-#@app.route('/NS//isolates/<string:isol_id>')
+#@app.route('/NS/species/<int:spec_id>/isolates/<string:isol_id>')
 class IsolatesAPItypon(Resource):
 	# curl -i  http://localhost:5000/NS/isolates/<string:isol_id>
 	def __init__(self):
@@ -1411,21 +1411,23 @@ class IsolatesAPItypon(Resource):
 								   type=str,
 								   help='Country from isolate')								  
 	
-	def get(self, isol_id):
+	def get(self, spec_id, isol_id):
 		
-		new_isol_url=baseURL+"isolates/"+str(isol_id)
-		result = get_data(virtuoso_server,'select ?name ?country ?country_name ?accession ?st ?date_entered  where { <'+new_isol_url+'> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered. OPTIONAL{<'+new_isol_url+'> typon:isolatedAt ?country. ?country rdfs:label ?country_name}OPTIONAL{<'+new_isol_url+'> typon:accession ?accession.}OPTIONAL{<'+new_isol_url+'> typon:st ?st.}  }')
+		#new_isol_url=baseURL+"isolates/"+str(isol_id)
+		new_isol_url=baseURL+"species/"+str(spec_id)+"/isolates/"+str(isol_id)
+		result = get_data(virtuoso_server,'select ?name ?country ?country_name ?accession ?st ?date_entered  ?strainID where { <'+new_isol_url+'> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered. OPTIONAL{<'+new_isol_url+'> typon:isolatedAt ?country. ?country rdfs:label ?country_name}OPTIONAL{<'+new_isol_url+'> typon:accession ?accession.}OPTIONAL{<'+new_isol_url+'> typon:st ?st.} OPTIONAL{<'+new_isol_url+'> typon:userStrainId ?strainID.} }')
 		try:
 			return (result["results"]["bindings"])
 		except:
 			return []
 	
 	@auth_token_required
-	def post(self, isol_id):
+	def post(self, spec_id, isol_id):
 		args = self.reqparse.parse_args(strict=True)
 		
 		#check if isolate exist
-		new_isol_url=baseURL+"isolates/"+str(isol_id)
+		#new_isol_url=baseURL+"isolates/"+str(isol_id)
+		new_isol_url=baseURL+"species/"+str(spec_id)+"/isolates/"+str(isol_id)
 		result = get_data(virtuoso_server,'ASK where { <'+new_isol_url+'> a typon:Isolate.}')
 		if not result['boolean'] :
 			return "Isolate not found", 404
@@ -1500,10 +1502,10 @@ class IsolatesAPItypon(Resource):
 #@app.route('/NS/species/<int:spec_id>/isolates/<string:isol_id>/alleles')
 class IsolatesAllelesAPItypon(Resource):
 	# curl -i  http://localhost:5000/NS/isolates/<string:isol_id>/alleles
-	def get(self, isol_id):
+	def get(self, spec_id, isol_id):
 		
 		#return all alleles from the isolate
-		new_isol_url=baseURL+"isolates/"+str(isol_id)
+		new_isol_url=baseURL+"species/"+str(spec_id)+"/isolates/"+str(isol_id)
 		result = get_data(virtuoso_server,'select ?alleles  where { <'+new_isol_url+'> a typon:Isolate; typon:hasAllele ?alleles.  }')
 		try:
 			return (result["results"]["bindings"])
@@ -1513,19 +1515,20 @@ class IsolatesAllelesAPItypon(Resource):
 #@app.route('/NS/species/<int:spec_id>/isolates/<string:isol_id>/schemas/<int:id>')
 class IsolatesProfileAPItypon(Resource):
 	# curl -i  http://localhost:5000/NS/isolates/<int:isol_id>/schemas/<int:id>
-	def get(self, isol_id,id):
+	def get(self, spec_id, isol_id,id):
 		
-		isol_url=baseURL+"isolates/"+str(isol_id)
+		spec_uri=baseURL+"species/"+str(spec_id)
+		isol_url=spec_uri+"/isolates/"+str(isol_id)
 		
 		#get species to build schema uri
-		result = get_data(virtuoso_server,'select ?taxon  where {<'+isol_url+'> typon:isFromTaxon ?taxon.}')
-		try:
-			species_uri = result["results"]["bindings"][0]['taxon']['value']
-		except:
-			return "Species not found for that isolate", 404
+		#~ result = get_data(virtuoso_server,'select ?taxon  where {<'+isol_url+'> typon:isFromTaxon <'+spec_uri+'>.}')
+		#~ try:
+			#~ species_uri = result["results"]["bindings"][0]['taxon']['value']
+		#~ except:
+			#~ return "Species not found for that isolate", 404
 		
 		#check if schema exists for that species
-		schema_uri=species_uri+"/schemas/"+str(id)
+		schema_uri=spec_uri+"/schemas/"+str(id)
 		result = get_data(virtuoso_server,'ASK where { <'+schema_uri+'> a typon:Schema.}')
 		
 		if not result['boolean'] :

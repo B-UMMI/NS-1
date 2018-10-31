@@ -18,7 +18,7 @@ To run this you'll need (installation of the following requirements are covered 
 - Some type of Database setup (e.g. postgresql, sqlite, ...)
 - virtuoso triple store (developed on 06.01.3127)
 
-# Installation detailed instructions:
+# Installation detailed instructions (*UBUNTU* based):
 
 1. get the app:
    1. create a folder where the app will be stored
@@ -87,7 +87,7 @@ Enable new configuration by creating a symbolic link in sites-enabled directory.
 
 # API described at:
 
-<https://app.swaggerhub.com/apis/mickaelsilva/nomenclature_server/1.0.0#/>
+<https://app.swaggerhub.com/apis-docs/mickaelsilva/nomenclature_server/1.0.0>
 
 # First time usage:
 
@@ -99,6 +99,17 @@ Enable new configuration by creating a symbolic link in sites-enabled directory.
 Use the `load_schema.py` script at `$path2App/app/scripts/` (use the `-h` flag for more info on how to use). `-t` flag is to be used with the token made on 1.
    2. Create a Schema based on a set of loci already on the nomenclature server:  
 Use the `load_schema_no_fasta.py` script at `$path2App/app/scripts/` (use the `-h` flag for more info on how to use). `-t` flag is to be used with the token made on 1.
+
+# Backing up data:
+
+1. Backing up virtuoso data:
+   1. You can just save the virtuoso.db that should be at /var/lib/virtuoso-opensource-6.1/db/. To load it just copy the file to the same directory
+   2. You can also dump the graph. Check http://docs.openlinksw.com/virtuoso/rdfperfdumpandreloadgraphs/ to do it. To load, check http://vos.openlinksw.com/owiki/wiki/VOS/VirtBulkRDFLoader.
+
+2. Backing up Postgres:
+   1. `psql dbname > outfile`
+   2. to load just do `psql dbname < outfile`
+
 
 # Future work
  - try latest virtuoso version (latest 6.x.xxx or 7)

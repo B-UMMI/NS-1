@@ -86,15 +86,15 @@ api.add_resource(IsolatesListAPItypon,
 				endpoint='isolatesList')
 
 api.add_resource(IsolatesAPItypon,
-				version+'/NS/isolates/<string:isol_id>',
+				version+'/NS/species/<int:spec_id>/isolates/<string:isol_id>',
 				endpoint='isolates')
 
 api.add_resource(IsolatesAllelesAPItypon,
-				version+'/NS/isolates/<string:isol_id>/alleles',
+				version+'/NS/species/<int:spec_id>/isolates/<string:isol_id>/alleles',
 				endpoint='isolatesAlleles')
 
 api.add_resource(IsolatesProfileAPItypon,
-				version+'/NS/isolates/<string:isol_id>/schemas/<int:id>',
+				version+'/NS/species/<int:spec_id>/isolates/<string:isol_id>/schemas/<int:id>',
 				endpoint='isolatesProfiles')
 
 api.add_resource(LociSequencesAPItypon,
