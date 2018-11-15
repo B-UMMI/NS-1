@@ -1068,12 +1068,13 @@ class AlleleListAPItypon(Resource):
 
 		enforceCDS=True
 		try:
-			if "False" in args['notCDS']:
+			if "False" in args['enforceCDS']:
 				enforceCDS=False
 		except:
 			pass
 		
 		print("Enforce a cds: "+str(enforceCDS))
+		
 		#check if it's a validated user
 		#~ userid=1
 		try:
@@ -1105,15 +1106,22 @@ class AlleleListAPItypon(Resource):
 		#sequence may no longer be translatable on user request, sad chewie :(
 		sequenceIstranslatable=False
 		proteinSequence=''
-		if enforceCDS:
-			print("trying to translate")
-			try:
-				proteinSequence=translateSeq(sequence,False,enforceCDS)
-				sequenceIstranslatable=True
-				print(sequenceIstranslatable)
-			except Exception as e:
-				print(e)
+		#~ if enforceCDS:
+		
+		#will attempt to translate even if not enforced CDS
+		#if translatable and enforce, ok
+		#if translatable and not enforce, ok
+		#if not translatable and enforce, error
+		print("trying to translate")
+		try:
+			proteinSequence=translateSeq(sequence,False,enforceCDS)
+			sequenceIstranslatable=True
+			print(sequenceIstranslatable)
+		except Exception as e:
+			if enforceCDS:
 				return "sequence failed to translate, not a CDS", 418
+			else:
+				sequenceIstranslatable=False
 				
 
 		#check if sequence is already present on locus query
