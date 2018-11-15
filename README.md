@@ -29,34 +29,35 @@ To run this you'll need (installation of the following requirements are covered 
 `sudo apt-get install aptitude`
 `sudo aptitude install  virtuoso-opensource`.  
 Other dists (see <http://vos.openlinksw.com/owiki/wiki/VOS>).
-	2. Usually the daemon is started after installation, kill the process or stop it
-	3. copy the virtuoso.db file to /var/lib/virtuoso-opensource-6.1/db/ (replace if already existing). This file is preloaded with the typon and the configuration necessary to be used with the application.
-	4. start manually virtuoso (use it in a screen environment)
-`sudo virtuoso-t -fd`
-	5. configuring your virtuoso instance
-check http://localhost/8890 on your browser and go to conductor, default admin of virtuoso is set as u:dba p:dba
+	2. copy the virtuoso.db file to /var/lib/virtuoso-opensource-6.1/db/ (replace if already existing). This file is preloaded with the typon and the configuration necessary to be used with the application. Restart the virtuoso daemon `sudo service virtuoso-opensource-6.1 restart` 
+	3. configuring your virtuoso instance
+check http://localhost/8890 on your browser and go to conductor, default admin of virtuoso is set as u:dba p:dba (if you can't access directly you can jump to the next step and after rerout check http://000.000.00.00/conductor/ )
 **change the password** of dba at "system admin" -> "user accounts". Also change the user "demo" password (default password is "demo" and **should be changed**). The "demo" user will be the one used to contact with the Nomenclature server application.
 
 3. Install nginx
 `sudo apt-get install nginx`
 `sudo ufw allow 'Nginx HTTP'`
     1. Configure nginx for the application:  
-We are going to route virtuoso and the application, which is in port 8890 and 5000 respectively. 
+We are going to route virtuoso and the application, which is in port 8890 and 5000 respectively. The virtuoso rerout may be removed (security/privacy) after changing the admin and demo passwords. Also delete the default files at `/etc/nginx/sites-available/` and `/etc/nginx/sites-enable/`
 Create new server configuration, save the file in /etc/nginx/sites-available/myconf.conf and copy the following to the file:
 ```
 server {
     listen 80;
     client_header_buffer_size 30k;
-    large_client_header_buffers 4 30k; 
- 
+    large_client_header_buffers 4 30k;
+
     location /app/ {
-	rewrite ^/app/(.*) /$1  break;
+        rewrite ^/app/(.*) /$1  break;
         proxy_pass http://127.0.0.1:5000;
     }
-	location / {
-	proxy_pass http://127.0.0.1:8890;
-            }
-	}
+
+    location ~/(conductor|sparql) {
+        rewrite ^/virtuoso/?(.*) /$1 break;
+        proxy_pass http://127.0.0.1:8890;
+        }
+
+
+}
 ```
 Enable new configuration by creating a symbolic link in sites-enabled directory.  
 `sudo ln -s /etc/nginx/sites-available/myconf.conf /etc/nginx/sites-enabled/`
