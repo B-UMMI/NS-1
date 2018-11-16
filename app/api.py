@@ -1,11 +1,11 @@
 from app import app
 from flask_restful import Api
-from app.resources.resources_ngsonto import NS, profile
-from app.resources.resources_ngsonto import SpeciesListAPItypon, SpeciesAPItypon
-from app.resources.resources_ngsonto import SchemaListAPItypon, SchemaLociAPItypon, SchemaAPItypon, SchemaZipAPItypon
-from app.resources.resources_ngsonto import LociListAPItypon, LociAPItypon, LociFastaAPItypon, LociSequencesAPItypon, LociUniprotAPItypon
-from app.resources.resources_ngsonto import AlleleListAPItypon, AlleleAPItypon, SequencesAPItypon, SequencesListAPItypon
-from app.resources.resources_ngsonto import IsolatesAPItypon, IsolatesAllelesAPItypon, IsolatesListAPItypon, IsolatesProfileAPItypon
+from app.resources.resources_typon import NS, profile
+from app.resources.resources_typon import SpeciesListAPItypon, SpeciesAPItypon
+from app.resources.resources_typon import SchemaListAPItypon, SchemaLociAPItypon, SchemaAPItypon, SchemaZipAPItypon
+from app.resources.resources_typon import LociListAPItypon, LociAPItypon, LociFastaAPItypon, LociSequencesAPItypon, LociUniprotAPItypon
+from app.resources.resources_typon import AlleleListAPItypon, AlleleAPItypon, SequencesAPItypon, SequencesListAPItypon
+from app.resources.resources_typon import IsolatesAPItypon, IsolatesAllelesAPItypon, IsolatesListAPItypon, IsolatesProfileAPItypon
 
 #version="/v1"
 version="/"+app.config['API_VERSION']

@@ -178,7 +178,7 @@ def main():
 	parser.add_argument('--sprefix', nargs='?', type=str, help='loci prefix, for instance ACIBA will produce ACIBA00001.fasta', required=True)
 	parser.add_argument('--cpu', nargs='?', type=int, help='number of cpu', required=False, default=1)
 	parser.add_argument('--keep', help='store original fasta name too', required=False,default=False,action='store_true')
-	parser.add_argument('--notCDS', help='store original fasta name too', required=False,default=False,action='store_false')
+	parser.add_argument('--notCDS', help='dont enforce the sequences to be cds', required=False,default=False,action='store_false')
 	parser.add_argument('--cont', help='use this flag to continue a schema upload that crashed in between', required=False,default=False,action='store_true')
 
 	args = parser.parse_args()
@@ -226,9 +226,12 @@ def main():
 	url = baseURL+"species/"+species+"/schemas"
 	r = requests.post(url, data=params,headers=headers)
 	#~ print (r)
-	
-	if r.status_code >201:
-		print("something went wrond, species probably not existant")
+	if r.status_code ==409:
+		print("schema already exists")
+		return 
+	elif r.status_code >201:
+		print(r.status_code)
+		print("something went wrong, species probably not existant")
 		return 
 	
 	schema_url= r.text.replace('"', '').strip()
