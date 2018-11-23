@@ -5,7 +5,7 @@ from app.resources.resources_typon import SpeciesListAPItypon, SpeciesAPItypon
 from app.resources.resources_typon import SchemaListAPItypon, SchemaLociAPItypon, SchemaAPItypon, SchemaZipAPItypon
 from app.resources.resources_typon import LociListAPItypon, LociAPItypon, LociFastaAPItypon, LociSequencesAPItypon, LociUniprotAPItypon
 from app.resources.resources_typon import AlleleListAPItypon, AlleleAPItypon, SequencesAPItypon, SequencesListAPItypon
-from app.resources.resources_typon import IsolatesAPItypon, IsolatesAllelesAPItypon, IsolatesListAPItypon, IsolatesProfileAPItypon
+from app.resources.resources_typon import IsolatesAPItypon, IsolatesAllelesAPItypon, IsolatesListAPItypon, IsolatesProfileAPItypon,IsolatesLociAPItypon,IsolatesUserListAPItypon
 
 #version="/v1"
 version="/"+app.config['API_VERSION']
@@ -92,6 +92,14 @@ api.add_resource(IsolatesAPItypon,
 api.add_resource(IsolatesAllelesAPItypon,
 				version+'/NS/species/<int:spec_id>/isolates/<string:isol_id>/alleles',
 				endpoint='isolatesAlleles')
+
+api.add_resource(IsolatesUserListAPItypon,
+				version+'/NS/species/<int:spec_id>/user/isolates',
+				endpoint='isolatesUser')
+
+api.add_resource(IsolatesLociAPItypon,
+				version+'/NS/species/<int:spec_id>/isolates/<string:isol_id>/loci/<int:locus_id>',
+				endpoint='isolatesLoci')
 
 api.add_resource(IsolatesProfileAPItypon,
 				version+'/NS/species/<int:spec_id>/isolates/<string:isol_id>/schemas/<int:id>',

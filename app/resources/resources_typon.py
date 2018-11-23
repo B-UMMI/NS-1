@@ -11,6 +11,7 @@ import sys
 import os
 import hashlib
 import time
+import urllib.request
 
 # Setup Flask-Security
 user_datastore = SQLAlchemyUserDatastore(db, User, Role)
@@ -23,6 +24,71 @@ virtuoso_pass=app.config['VIRTUOSO_PASS']
 url_send_local_virtuoso=app.config['URL_SEND_LOCAL_VIRTUOSO']
 
 #### ---- AUX FUNCTIONS ---- ###
+
+def get_read_run_info_ena(ena_id):
+
+	url = 'http://www.ebi.ac.uk/ena/data/warehouse/filereport?accession=' + ena_id + 'AAA&result=read_run'
+
+	read_run_info = False
+	try:
+		with urllib.request.urlopen(url) as url:
+			read_run_info = url.read().splitlines()
+			if len(read_run_info) <= 1:
+				read_run_info = False
+			else:
+				read_run_info=True
+	except Exception as error:
+		print(error)
+	
+	return read_run_info
+
+def get_read_run_info_sra(SRA_id):
+	
+	url = 'https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?save=efetch&db=sra&rettype=runinfo&term=%20'+SRA_id
+	
+	read_run_info = False
+	try:
+		with urllib.request.urlopen(url,timeout = 2) as url:
+			status_code=url.getcode()
+			headers=url.info()
+			
+			#if the SRA_id is not found ncbi is very generous and may give a tsunami of info, limit that to 30k bytes if that's the case
+			#we wont consider that ID
+			read_run_info = url.read(30000)
+			try:
+				read_run_info=read_run_info.splitlines()
+			except:
+				return read_run_info
+
+			
+			#check if the ERR is on the second element of the list returned
+			#thanks NCBI for returning wtv if the SRA_id is "LALA" or whatever I put there
+			#very cranky bypass of this, change in the future
+			
+			if SRA_id in read_run_info[1].decode("utf-8") :
+				read_run_info=True
+			else:
+				read_run_info=False
+			
+	except Exception as error:
+		print(error)
+
+	return read_run_info
+
+#dirty way to check the disease URI is real, no pun intended :)))
+def check_disease_resource(URI):
+	try:
+		
+		print('http://www.ontobee.org/ontology/rdf/DOID?iri='+URI)
+		r = requests.get('http://www.ontobee.org/ontology/rdf/DOID?iri='+URI)
+		print(r.status_code)
+		diseaseFound=False
+		if int(r.status_code)<202:
+			diseaseFound=True
+	except Exception as e:
+		print(e)
+		diseaseFound=False
+	return diseaseFound
 
 def sanitize_input(mystring):
 	print ("sanitizing")
@@ -302,7 +368,7 @@ class profile(Resource):
 				#get the allele id
 				try:
 					allele= int(profileDict[genomeName][i])
-					hasAlleles+=1
+					
 				except:
 					i+=1
 					continue
@@ -319,19 +385,15 @@ class profile(Resource):
 				except:
 					#~ print ("locus is not on db")
 					return str(headers[i+1])+" locus was not found, profile not uploaded",404
-				
-				#if the genome has previously been sent, some alleles may already been attributed
-				#~ if loci_uri in genesAlreadyAttr:
-					#~ return str(headers[i+1])+" locus already has an allele attributed for "+genomeName+", all profiles uploaded canceled",409
-					#~ hasAlleles-=1
-					#~ print( str(headers[i+1])+" locus already has an allele attributed, locus not uploaded")
-				
-				#~ else:
-					
-					#TODO check if allele actaully exists?
-					
+									
+				#check if allele exists
 				allele_uri=loci_uri+"/alleles/"+str(allele)
-				rdf_2_ins+= '\ntypon:hasAllele <'+allele_uri+'>;'
+				result = get_data(virtuoso_server,'ASK where { <'+loci_uri+'> a typon:Locus; typon:hasDefinedAllele <'+allele_uri+'> }')
+				if result['boolean']:
+					
+					rdf_2_ins+= '\ntypon:hasAllele <'+allele_uri+'>;'
+					hasAlleles+=1
+					
 				i+=1
 			
 			#if the genome has alleles, send the rdf
@@ -402,12 +464,15 @@ class SpeciesListAPItypon(Resource):
 		#only admin can do this
 		#~ userid=1
 		#get user id, if >1 means is not the first user and cant continue the request
+		userid=g.identity.user.id
 		try:
-			userid=g.identity.user.id
+			new_user_url=baseURL+"users/"+str(userid)
+			result = get_data(virtuoso_server,'ASK where { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>; typon:Role "Admin"^^xsd:string}')
+			if not result['boolean']:
+				return "not authorized, admin only", 405
 		except:
 			return "not authorized, admin only", 405
-		if userid>1:
-			return "not authorized, admin only", 405
+
 		
 		#get number of taxon already on the graph
 		result = get_data(virtuoso_server,'select (COUNT(?taxon) as ?count) where { ?taxon a <http://purl.uniprot.org/core/Taxon> }')
@@ -448,7 +513,7 @@ class SpeciesAPItypon(Resource):
 		#result = get_data(virtuoso_server,'select ?species ?name where { <'+url+'> owl:sameAs ?species; typon:name ?name. } ')
 		
 		#get species name and its schemas
-		result = get_data(virtuoso_server,'select ?species ?name ?schemas ?schemaName where { {<'+url+'> owl:sameAs ?species; typon:name ?name.} UNION { ?schemas typon:isFromTaxon <'+url+'>; a typon:Schema; typon:schemaName ?schemaName.}}')
+		result = get_data(virtuoso_server,'select ?species ?name ?schemas ?schemaName where { {<'+url+'> owl:sameAs ?species; typon:name ?name.} UNION { ?schemas typon:isFromTaxon <'+url+'>; a typon:Schema; typon:schemaName ?schemaName. FILTER NOT EXISTS { ?schemas typon:deprecated  "true"^^xsd:boolean }}}')
 		return (result["results"]["bindings"])
 
 
@@ -467,7 +532,7 @@ class SchemaListAPItypon(Resource):
 	def get(self, spec_id):
 		
 		species_url=baseURL+"species/"+str(spec_id)	
-		result = get_data(virtuoso_server,'select ?schemas ?name where { ?schemas a typon:Schema; typon:isFromTaxon <'+species_url+'>; typon:schemaName ?name. }')
+		result = get_data(virtuoso_server,'select ?schemas ?name where { ?schemas a typon:Schema; typon:isFromTaxon <'+species_url+'>; typon:schemaName ?name. FILTER NOT EXISTS { ?schemas typon:deprecated  "true"^^xsd:boolean }}')
 		try:
 			return (result["results"]["bindings"])
 		except:
@@ -492,12 +557,22 @@ class SchemaListAPItypon(Resource):
 			result = get_data(virtuoso_server,'select ?schema where {?schema a typon:Schema; typon:isFromTaxon <'+species_url+'>; typon:schemaName "'+args['name']+'"^^xsd:string .}')
 			schema_url = result["results"]["bindings"][0]['schema']['value']
 			
-			return schema_url, 409
+			return "schema with that description already exists "+schema_url, 409
+		
+		#only users with role admin can do this
+		userid=g.identity.user.id
+		try:
+			new_user_url=baseURL+"users/"+str(userid)
+			result = get_data(virtuoso_server,'ASK where { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>; typon:Role "Admin"^^xsd:string}')
+			if not result['boolean']:
+				return "not authorized, admin only", 405
+		except:
+			return "not authorized, admin only", 405
 		
 		#only user 1 can add schemas, change at your discretion
-		userid=g.identity.user.id
-		if userid>1:
-			return "not authorized, admin only", 405
+		#~ userid=g.identity.user.id
+		#~ if userid>1:
+			#~ return "not authorized, admin only", 405
 			
 		new_user_url=baseURL+"users/"+str(userid)
 		
@@ -520,14 +595,60 @@ class SchemaAPItypon(Resource):
 	def get(self, spec_id,id ):
 		
 		new_schema_url=baseURL+"species/"+str(spec_id)+"/schemas/"+str(id)
-		result = get_data(virtuoso_server,'select ?description (COUNT(?part) as ?number_loci) where { <'+new_schema_url+'> typon:schemaName ?description; typon:hasSchemaPart ?part. }')
 		
+		result = get_data(virtuoso_server,'ASK where {<'+new_schema_url+'>typon:deprecated "true"^^xsd:boolean.}')
+		if result['boolean']:
+			return "Schema is now deprecated",200
+		
+		result = get_data(virtuoso_server,'select ?description (COUNT(?part) as ?number_loci) where { <'+new_schema_url+'> typon:schemaName ?description; typon:hasSchemaPart ?part. }')
 		try:
 			finalresult=result["results"]["bindings"]
 			finalresult[0]['list_loci']={'value':new_schema_url+'/loci'}
 			return (finalresult)
 		except:
 			return []
+	
+	#it doesnt delete, it just adds an attribute typon:deprecated  "true"^^xsd:boolean to that part of the schema, the locus is just "removed" for the specific schema!!!11
+	@auth_token_required
+	def delete(self, spec_id, id):
+
+		
+		#only admin can do this
+		
+		userid=g.identity.user.id
+		try:
+			new_user_url=baseURL+"users/"+str(userid)
+			result = get_data(virtuoso_server,'ASK where { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>; typon:Role "Admin"^^xsd:string}')
+			if not result['boolean']:
+				return "not authorized, admin only", 405
+		except:
+			return "not authorized, admin only", 405
+		
+		#~ try:
+			#~ userid=g.identity.user.id
+		#~ except:
+			#~ return "not authorized, admin only", 405
+		#~ if userid>1:
+			#~ return "not authorized, admin only", 405
+		#~ 
+		#~ userid=1
+		
+		new_user_url=baseURL+"users/"+str(userid)
+		
+		#check if schema exists
+		new_schema_url=baseURL+"species/"+str(spec_id)+"/schemas/"+str(id)
+		result = get_data(virtuoso_server,'ASK where { <'+new_schema_url+'> a typon:Schema; typon:administratedBy <'+new_user_url+'>.}')
+		if not result['boolean']:
+			return "Schema not found or schema is not yours", 404
+		
+		
+		#add a tripple to the link between the schema and the locus implying that the locus is deprecated for that schema
+		result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_schema_url+'> typon:deprecated "true"^^xsd:boolean.}')
+		
+		if result.status_code == 201 :
+			return "Locus sucessfully removed from schema", 201	
+		else:
+			return "Sum Thing Wong", result.status_code
 
 #@app.route('/NS/species/<int:spec_id>/schema/<int:id>/compressed') 
 class SchemaZipAPItypon(Resource):
@@ -537,7 +658,7 @@ class SchemaZipAPItypon(Resource):
 		
 		#check if schema exists
 		new_schema_url=baseURL+"species/"+str(spec_id)+"/schemas/"+str(id)
-		result = get_data(virtuoso_server,'select ?description (COUNT(?part) as ?number_loci) where { <'+new_schema_url+'> typon:schemaName ?description; typon:hasSchemaPart ?part. }')
+		result = get_data(virtuoso_server,'select ?description (COUNT(?part) as ?number_loci) where { <'+new_schema_url+'> typon:schemaName ?description; typon:hasSchemaPart ?part. FILTER NOT EXISTS { <'+new_schema_url+'> typon:deprecated  "true"^^xsd:boolean }}')
 		
 		try:
 			schema_name=result["results"]["bindings"][0]["description"]["value"]
@@ -584,11 +705,12 @@ class SchemaLociAPItypon(Resource):
 
 		new_schema_url=baseURL+"species/"+str(spec_id)+"/schemas/"+str(id)
 		
-		#check if schema exists
+		#check if schema exists or deprecated
 		new_schema_url=baseURL+"species/"+str(spec_id)+"/schemas/"+str(id)
-		result = get_data(virtuoso_server,'ASK where { <'+new_schema_url+'> a typon:Schema.}')
-		if not result['boolean']:
-			return "Schema not found ", 404
+		result = get_data(virtuoso_server,'ASK where { <'+new_schema_url+'> a typon:Schema; typon:deprecated  "true"^^xsd:boolean }')
+		
+		if result['boolean']:
+			return "Schema not found or deprecated", 404
 		
 		# if date is provided the request returns the alleles that were added after that specific date for all loci
 		# else the request returns the list of loci
@@ -690,8 +812,8 @@ class SchemaLociAPItypon(Resource):
 		
 		#check if schema exists
 		new_schema_url=baseURL+"species/"+str(spec_id)+"/schemas/"+str(id)
-		result = get_data(virtuoso_server,'ASK where { <'+new_schema_url+'> a typon:Schema; typon:administratedBy <'+new_user_url+'>.}')
-		if not result['boolean']:
+		result = get_data(virtuoso_server,'ASK where { <'+new_schema_url+'> a typon:Schema; typon:administratedBy <'+new_user_url+'>; typon:deprecated  "true"^^xsd:boolean }')
+		if result['boolean']:
 			return "Schema not found or schema is not yours", 404
 		
 		#check if locus exists
@@ -744,12 +866,21 @@ class SchemaLociAPItypon(Resource):
 			return "No valid id provided for loci: loci_id=<int>", 404
 		
 		#only admin can do this
+		
+		userid=g.identity.user.id
 		try:
-			userid=g.identity.user.id
+			new_user_url=baseURL+"users/"+str(userid)
+			result = get_data(virtuoso_server,'ASK where { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>; typon:Role "Admin"^^xsd:string}')
+			if not result['boolean']:
+				return "not authorized, admin only", 405
 		except:
 			return "not authorized, admin only", 405
-		if userid>1:
-			return "not authorized, admin only", 405
+		#~ try:
+			#~ userid=g.identity.user.id
+		#~ except:
+			#~ return "not authorized, admin only", 405
+		#~ if userid>1:
+			#~ return "not authorized, admin only", 405
 		#~ 
 		#~ userid=1
 		
@@ -757,7 +888,7 @@ class SchemaLociAPItypon(Resource):
 		
 		#check if schema exists
 		new_schema_url=baseURL+"species/"+str(spec_id)+"/schemas/"+str(id)
-		result = get_data(virtuoso_server,'ASK where { <'+new_schema_url+'> a typon:Schema; typon:administratedBy <'+new_user_url+'>.}')
+		result = get_data(virtuoso_server,'ASK where { <'+new_schema_url+'> a typon:Schema; typon:administratedBy <'+new_user_url+'>; typon:deprecated  "true"^^xsd:boolean }')
 		if not result['boolean']:
 			return "Schema not found or schema is not yours", 404
 		
@@ -868,10 +999,22 @@ class LociListAPItypon(Resource):
 			check_len(args['prefix'])
 		except:
 			return "provide prefix", 400
+		
+		
 		#only admin can do this
+		
 		userid=g.identity.user.id
-		if userid>1:
+		try:
+			new_user_url=baseURL+"users/"+str(userid)
+			result = get_data(virtuoso_server,'ASK where { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>; typon:Role "Admin"^^xsd:string}')
+			if not result['boolean']:
+				return "not authorized, admin only", 405
+		except:
 			return "not authorized, admin only", 405
+		
+		#~ userid=g.identity.user.id
+		#~ if userid>1:
+			#~ return "not authorized, admin only", 405
 		
 		spec_url=baseURL+"species/"+str(spec_id)
 		result = get_data(virtuoso_server,'ASK where { <'+spec_url+'> a <http://purl.uniprot.org/core/Taxon>}')
@@ -893,7 +1036,7 @@ class LociListAPItypon(Resource):
 		newLocusId=number_loci_spec+1
 		
 		#name will be something like prefix00001.fasta
-		aliases=args['prefix']+"%05d" % (newLocusId,)+".fasta"
+		aliases=args['prefix']+"%06d" % (newLocusId,)+".fasta"
 		
 		new_locus_url=baseURL+"species/"+str(spec_id)+"/loci/"+str(newLocusId)
 		
@@ -1080,7 +1223,7 @@ class AlleleListAPItypon(Resource):
 		
 
 
-	# curl -i http://localhost:5000/NS/species/1/loci/7/alleles -d 'time_stamp=2017-07-24T17:16:59.688836' -d 'sequence=ACTCTGT'
+	# curl -i http://localhost:5000/NS/species/1/loci/7/alleles -d 'sequence=ACTCTGT'
 	@auth_token_required
 	def post(self, spec_id, loci_id):
 		args = self.reqparse.parse_args(strict=True)
@@ -1458,6 +1601,119 @@ class IsolatesListAPItypon(Resource):
 		except:
 			return []
 
+#@app.route('/NS/species/<int:spec_id>/isolates/user')
+class IsolatesUserListAPItypon(Resource):
+	# curl -i  http://localhost:5000/NS/species/1/isolates/user
+	
+	def __init__(self):
+		self.reqparse = reqparse.RequestParser()
+
+		self.reqparse.add_argument('isolName', dest= 'isolName',
+								   required=False,
+								   type=str,
+								   help='isolate name')
+		
+		self.reqparse.add_argument('start', dest= 'start',
+								   required=False,
+								   type=str,
+								   help='provide a date in the format YYYY-MM-DDTHH:MM:SS to get the isolates that were uploaded after that defined date')
+		
+		self.reqparse.add_argument('end', dest= 'end',
+								   required=False,
+								   type=str,
+								   help='provide a date in the format YYYY-MM-DDTHH:MM:SS to get the isolates that were uploaded before that defined date')
+	@auth_token_required
+	def get(self, spec_id):
+		
+		args = self.reqparse.parse_args(strict=True)
+		isolName=False
+		try:
+			isolName=args['isolName']
+		except:
+			pass
+		
+		startDate=False
+		try:
+			startDate=args['start']
+		except:
+			pass
+		
+		endDate=False
+		try:
+			endDate=args['end']
+		except:
+			pass
+		
+		userid=g.identity.user.id
+		user_url=baseURL+"users/"+str(userid)
+		
+		#if isolate name is provided return that isolate, else return all isolates
+		#if number of isolates >100000 either increase the number of rows the virtuoso return or use the dateEntered property 
+		#and make multiple queries to virtuoso based on the date until all have been fetched
+		#you can create your own time intervals to better suite your query
+		if isolName:
+			new_spec_url=baseURL+"species/"+str(spec_id)
+			result = get_data(virtuoso_server,'select ?isolate ?date where { ?isolate a typon:Isolate; typon:sentBy <'+user_url+'>; typon:isFromTaxon <'+new_spec_url+'>; typon:dateEntered ?date; typon:name "'+isolName+'"^^xsd:string.}')
+		elif startDate and endDate:
+			new_spec_url=baseURL+"species/"+str(spec_id)
+			result = get_data(virtuoso_server,'select ?isolate ?name where {{ select ?isolate ?name where { ?isolate a typon:Isolate; typon:sentBy <'+user_url+'>; typon:isFromTaxon <'+new_spec_url+'>; typon:name ?name;typon:dateEntered ?date. FILTER ( ?date > "'+startDate+'"^^xsd:dateTime ).FILTER ( ?date < "'+endDate+'"^^xsd:dateTime ) } order by ASC(?date)}} LIMIT 50000')
+		
+		elif endDate:
+			new_spec_url=baseURL+"species/"+str(spec_id)
+			result = get_data(virtuoso_server,'select ?isolate ?name where {{ select ?isolate ?name where { ?isolate a typon:Isolate; typon:sentBy <'+user_url+'>; typon:isFromTaxon <'+new_spec_url+'>; typon:name ?name;typon:dateEntered ?date. FILTER ( ?date < "'+endDate+'"^^xsd:dateTime ). } order by DESC(?date)}} LIMIT 50000')
+		
+		elif startDate:
+			new_spec_url=baseURL+"species/"+str(spec_id)
+			result = get_data(virtuoso_server,'select ?isolate ?name where {{ select ?isolate ?name where { ?isolate a typon:Isolate; typon:sentBy <'+user_url+'>; typon:isFromTaxon <'+new_spec_url+'>; typon:name ?name;typon:dateEntered ?date. FILTER ( ?date > "'+startDate+'"^^xsd:dateTime ). } order by ASC(?date)}} LIMIT 50000')
+		else:
+			new_spec_url=baseURL+"species/"+str(spec_id)
+			result = get_data(virtuoso_server,'select ?isolate ?name where {{select ?isolate ?name where { ?isolate a typon:Isolate; typon:sentBy <'+user_url+'>; typon:isFromTaxon <'+new_spec_url+'>;typon:dateEntered ?date ; typon:name ?name. }order by ASC(?date)}}LIMIT 50000')
+		
+		if len(result["results"]["bindings"])<1:
+			
+			def generate():
+				yield '{"Isolates": []}'
+			
+			r = Response(stream_with_context(generate()), content_type='application/json')
+			r.headers.set('Server-Date',str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')))
+			return r
+		
+		latestIsolate=(result["results"]["bindings"])[-1]
+		isolate_id=latestIsolate['isolate']['value']
+		
+		#get latest isolate submission date
+		result2 = get_data(virtuoso_server,' select ?date where { <'+isolate_id+'> a typon:Isolate; typon:dateEntered ?date }')
+		
+		latestDatetime=(result2["results"]["bindings"])[0]['date']['value']
+		number_of_isolates=len(result["results"]["bindings"])
+		try:
+			
+			def generate():
+				yield '{"Isolates": ['
+				#~ for item in result["results"]["bindings"]:
+					#~ yield json.dumps(item)+','
+				#~ yield json.dumps({'date':latestDatetime})+']}'
+			
+				try:
+					prev_item=result["results"]["bindings"].pop(0)
+				except:
+					yield ']}'
+				for item in result["results"]["bindings"]:
+					yield json.dumps(prev_item)+','
+					prev_item = item
+				yield json.dumps(prev_item)+']}'
+				
+			r = Response(stream_with_context(generate()), content_type='application/json')
+			r.headers.set('Last-Isolate',latestDatetime)
+			if number_of_isolates>49999:
+				r.headers.set('All-Isolates-Returned',False)
+			else:
+				r.headers.set('All-Isolates-Returned',True)
+			return r
+		
+		except:
+			return []
+
 #@app.route('/NS/species/<int:spec_id>/isolates/<string:isol_id>')
 class IsolatesAPItypon(Resource):
 	# curl -i  http://localhost:5000/NS/isolates/<string:isol_id>
@@ -1468,18 +1724,42 @@ class IsolatesAPItypon(Resource):
 								   required=False,
 								   type=str,
 								   help='acession URL to reads')
-		self.reqparse.add_argument('ST', dest= 'mlstst',
+		self.reqparse.add_argument('ST', dest= 'st',
 								   required=False,
 								   type=str,
 								   help='ST for traditional 7 genes MLST')
-		self.reqparse.add_argument('strainId', dest= 'strainId',
+		self.reqparse.add_argument('strainId', dest= 'strainID',
 								   required=False,
 								   type=str,
 								   help='strain identifier')
+		self.reqparse.add_argument('collection_date', dest= 'coldate',
+								   required=False,
+								   type=str,
+								   help='the date on which the sample was collected')
+		self.reqparse.add_argument('host', dest= 'host',
+								   required=False,
+								   type=str,
+								   help='The natural (as opposed to laboratory) host to the organism from which the sample was obtained. Use the full taxonomic name, eg, "Homo sapiens".')
+		self.reqparse.add_argument('host_disease', dest= 'host_disease',
+								   required=False,
+								   type=str,
+								   help='DOID ID , e.g. salmonellosis has ID 0060859. Controlled vocabulary, http://www.disease-ontology.org/')
+		self.reqparse.add_argument('lat', dest= 'lat',
+								   required=False,
+								   type=float,
+								   help='latitude information in the WGS84 geodetic reference datum, e.g 30.0000')
+		self.reqparse.add_argument('long', dest= 'long',
+								   required=False,
+								   type=float,
+								   help='longitude information in the WGS84 geodetic reference datum, e.g. 30.0000')
+		self.reqparse.add_argument('isol_source', dest= 'isol_source',
+								   required=False,
+								   type=str,
+								   help='Describes the physical, environmental and/or local geographical source of the biological sample from which the sample was derived.')
 		self.reqparse.add_argument('country', dest= 'country',
 								   required=False,
 								   type=str,
-								   help='Country from isolate')								  
+								   help='Country from isolate')							  
 	
 	def get(self, spec_id, isol_id):
 		
@@ -1487,7 +1767,18 @@ class IsolatesAPItypon(Resource):
 		new_isol_url=baseURL+"species/"+str(spec_id)+"/isolates/"+str(isol_id)
 		
 		#get information on the isolate, metadata are optional
-		result = get_data(virtuoso_server,'select ?name ?country ?country_name ?accession ?st ?date_entered  ?strainID where { <'+new_isol_url+'> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered. OPTIONAL{<'+new_isol_url+'> typon:isolatedAt ?country. ?country rdfs:label ?country_name}OPTIONAL{<'+new_isol_url+'> typon:accession ?accession.}OPTIONAL{<'+new_isol_url+'> typon:st ?st.} OPTIONAL{<'+new_isol_url+'> typon:userStrainId ?strainID.} }')
+		query='select ?name ?country ?country_name ?accession ?st ?date_entered  ?strainID ?col_date ?host ?host_disease ?lat ?long ?isol_source\n where { <'+new_isol_url+'''> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered.
+		OPTIONAL{<'''+new_isol_url+'''> typon:isolatedAt ?country. ?country rdfs:label ?country_name}
+		OPTIONAL{<'''+new_isol_url+'''> typon:accession ?accession.}
+		OPTIONAL{<'''+new_isol_url+'''> typon:ST ?st.} 
+		OPTIONAL{<'''+new_isol_url+'''> typon:sampleCollectionDate ?col_date.}
+		OPTIONAL{<'''+new_isol_url+'''> typon:host ?host.}
+		OPTIONAL{<'''+new_isol_url+'''> typon:hostDisease ?host_disease.}
+		OPTIONAL{<'''+new_isol_url+'''> <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.}
+		OPTIONAL{<'''+new_isol_url+'''> <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.} 
+		OPTIONAL{<'''+new_isol_url+'> typon:isolationSource ?isol_source.} }'
+		result = get_data(virtuoso_server,query)
+		#result = get_data(virtuoso_server,'select ?name ?country ?country_name ?accession ?st ?date_entered  ?strainID where { <'+new_isol_url+'> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered. OPTIONAL{<'+new_isol_url+'> typon:isolatedAt ?country. ?country rdfs:label ?country_name}OPTIONAL{<'+new_isol_url+'> typon:accession ?accession.}OPTIONAL{<'+new_isol_url+'> typon:st ?st.} OPTIONAL{<'+new_isol_url+'> typon:userStrainId ?strainID.} }')
 		try:
 			return (result["results"]["bindings"])
 		except:
@@ -1497,16 +1788,21 @@ class IsolatesAPItypon(Resource):
 	def post(self, spec_id, isol_id):
 		args = self.reqparse.parse_args(strict=True)
 		
+		#remove nones from args
+		args2remove=[]
+		for k,v in args.items():
+			if v is None:
+				args2remove.append(k)
+		for k in args2remove:	
+			args.pop(k, None)
+		
+
 		#check if isolate exist
 		#new_isol_url=baseURL+"isolates/"+str(isol_id)
 		new_isol_url=baseURL+"species/"+str(spec_id)+"/isolates/"+str(isol_id)
 		result = get_data(virtuoso_server,'ASK where { <'+new_isol_url+'> a typon:Isolate.}')
 		if not result['boolean'] :
 			return "Isolate not found", 404
-		
-		#get metadata already existing
-		result_meta = get_data(virtuoso_server,'select ?name ?country ?country_name ?accession ?st ?date_entered  ?strainID where { <'+new_isol_url+'> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered. OPTIONAL{<'+new_isol_url+'> typon:isolatedAt ?country. ?country rdfs:label ?country_name}OPTIONAL{<'+new_isol_url+'> typon:accession ?accession.}OPTIONAL{<'+new_isol_url+'> typon:st ?st.} OPTIONAL{<'+new_isol_url+'> typon:userStrainId ?strainID.} }')
-		result_meta=result_meta["results"]["bindings"][0]
 		
 		#check if isolate belongs to the user that is submitting the post
 		#~ userid=1
@@ -1515,6 +1811,25 @@ class IsolatesAPItypon(Resource):
 		result = get_data(virtuoso_server,'ASK where { <'+new_isol_url+'> typon:sentBy <'+new_user_url+'>.}')
 		if not result['boolean'] :
 			return "Isolate not yours", 403
+		
+		
+		#get metadata already existing
+		query='select ?name ?country ?country_name ?accession ?st ?date_entered  ?strainID ?col_date ?host ?host_disease ?lat ?long ?isol_source\n where { <'+new_isol_url+'''> a typon:Isolate; typon:name ?name; typon:dateEntered ?date_entered.
+		OPTIONAL{<'''+new_isol_url+'''> typon:isolatedAt ?country. ?country rdfs:label ?country_name}
+		OPTIONAL{<'''+new_isol_url+'''> typon:accession ?accession.}
+		OPTIONAL{<'''+new_isol_url+'''> typon:ST ?st.} 
+		OPTIONAL{<'''+new_isol_url+'''> typon:sampleCollectionDate ?col_date.}
+		OPTIONAL{<'''+new_isol_url+'''> typon:host ?host.}
+		OPTIONAL{<'''+new_isol_url+'''> typon:hostDisease ?host_disease.}
+		OPTIONAL{<'''+new_isol_url+'''> <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?lat.}
+		OPTIONAL{<'''+new_isol_url+'''> <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?long.} 
+		OPTIONAL{<'''+new_isol_url+'> typon:isolationSource ?isol_source.} }'
+		result_meta = get_data(virtuoso_server,query)
+		
+		result_meta=result_meta["results"]["bindings"][0]
+		
+		metadataNotUploadable={}
+		metadataUploadable=0
 		
 		country_name=False
 		try:
@@ -1528,42 +1843,198 @@ class IsolatesAPItypon(Resource):
 		
 		
 		data2sendlist=[]
-		#if metadata provided, insert in RDF
+		
+		#########
 		#if metadata already on database, skip the new one
+		#if metadata provided, insert in RDF
+		
+		#accession check
 		try:
 			aux=result_meta['accession']['value']
 		except:
 			try:
-				data2sendlist.append(' typon:accession "'+args['accession']+'"^^xsd:string')
-			except:
+				#TODO check if accession exists
+				
+				#check if accession exists in ENA
+				print("checking accession...")
+				accession=args['accession']
+				#accessionTooSmall
+				if len(accession)<5:
+					metadataNotUploadable['accession']=accession
+					
+				else:
+					existsInENA=get_read_run_info_ena(accession)
+					print("Found in ena: "+str(existsInENA))
+					
+					if existsInENA:
+						data2sendlist.append(' typon:accession <https://www.ebi.ac.uk/ena/data/view/'+accession+'>')
+						metadataUploadable+=1
+					else:
+						existsInSRA=get_read_run_info_sra(accession)
+						print("Found in sra: "+str(existsInSRA))
+						if existsInSRA:
+							data2sendlist.append(' typon:accession <https://www.ncbi.nlm.nih.gov/sra/'+accession+'>')
+							metadataUploadable+=1
+						else:
+							metadataNotUploadable['accession']=accession
+			except :
 				pass
 		
+		#st check
 		try:
 			aux=result_meta['st']['value']
 		except:
 			try:
-				data2sendlist.append(' typon:st "'+args['mlstst']+'"^^xsd:integer')
+				data2sendlist.append(' typon:ST "'+args['st']+'"^^xsd:integer')
+				metadataUploadable+=1
 			except:
 				pass
 		
+		#collection date check
 		try:
-			aux=result_meta['strainID']['value']
+			aux=result_meta['col_date']['value']
 		except:
 			try:
-				data2sendlist.append(' typon:userStrainId"'+args['strainId']+'"^^xsd:string')
+				col_date=args['coldate']
+				try:
+					col_date=str(datetime.datetime.strptime(col_date, '%Y-%m-%d'))
+					data2sendlist.append(' typon:sampleCollectionDate "'+col_date+'"^^xsd:dateTime')
+					metadataUploadable+=1
+				except:
+					metadataNotUploadable['coldate']=col_date
 			except:
 				pass
 		
+		#host check
+		try:
+			aux=result_meta['host']['value']
+		except:
+			try:
+				
+				#get the taxon id from uniprot, if not found metadata not added
+				#capitalize the first letter as per scientific name notation
+				hostname=(args['host']).capitalize()
+				print("host name: "+hostname)
+				
+				#query is made to the scientific name first, then common name and then other name
+				query='PREFIX up:<http://purl.uniprot.org/core/> PREFIX taxon:<http://purl.uniprot.org/taxonomy/> PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#> SELECT ?taxon FROM  <http://sparql.uniprot.org/taxonomy> WHERE{	OPTIONAL{?taxon a up:Taxon; up:scientificName "'+hostname+'" } OPTIONAL{?taxon a up:Taxon; up:commonName "'+hostname+'" } OPTIONAL{?taxon a up:Taxon; up:otherName "'+hostname+'" } .}'
+				
+				print ("searching on host..")
+				
+				result2 = get_data(uniprot_server,query)
+				try:
+					url=result2["results"]["bindings"][0]['taxon']['value']
+					data2sendlist.append(' typon:host <'+url+'>')
+					metadataUploadable+=1
+					print("host taxon found")
+					
+				except:
+					#not found, lets try the query without capitalized first letter
+					print("host name not found: "+hostname)
+					hostname=args['host']
+					print("Trying host name without first capitalized letter: "+hostname)
+					
+					query='PREFIX up:<http://purl.uniprot.org/core/> PREFIX taxon:<http://purl.uniprot.org/taxonomy/> PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#> SELECT ?taxon FROM  <http://sparql.uniprot.org/taxonomy> WHERE{	OPTIONAL{?taxon a up:Taxon; up:scientificName "'+hostname+'" } OPTIONAL{?taxon a up:Taxon; up:commonName "'+hostname+'" } OPTIONAL{?taxon a up:Taxon; up:otherName "'+hostname+'" } .}'
+				
+					print ("searching on uniprot..")
+					
+					result2 = get_data(uniprot_server,query)
+					try:
+						url=result2["results"]["bindings"][0]['taxon']['value']
+						data2sendlist.append(' typon:host <'+url+'>')
+						metadataUploadable+=1
+						print("host taxon found")
+					
+					except:
+						print("no host names found for: "+hostname)
+						metadataNotUploadable['host']=hostname
+						print("species name not found on uniprot, search on http://www.uniprot.org/taxonomy/")
+						pass
+
+			except:
+				pass
+		
+		#host disease check
+		try:
+			aux=result_meta['host_disease']['value']
+		except:
+			try:
+				host_disease_ID=args['host_disease']
+				#TODO check if exists
+				
+				host_disease_URI='http://purl.obolibrary.org/obo/DOID_'+host_disease_ID
+				
+				print("checking disease...")
+				disease_found=check_disease_resource(host_disease_URI)
+				
+				print("disease found: "+str(disease_found))
+				
+				if disease_found:
+					
+					data2sendlist.append(' typon:hostDisease <'+host_disease_URI+'>')
+					metadataUploadable+=1
+				else:
+					print(host_disease_URI+ " is not existant")
+					metadataNotUploadable['host_disease']=host_disease_ID
+			except Exception as e:
+				print(e)
+				pass
+		
+		#isolation source check
+		try:
+			aux=result_meta['isol_source']['value']
+		except:
+			try:
+				isol_source=args['isol_source']
+				data2sendlist.append(' typon:isolationSource "'+isol_source+'"^^xsd:string')
+				metadataUploadable+=1
+			except:
+				pass
+		
+		#longitude check
+		try:
+			aux=result_meta['long']['value']
+		except:
+			try:
+				longitude=args['long']
+				try:
+					latitude=float(longitude)
+					data2sendlist.append(' <http://www.w3.org/2003/01/geo/wgs84_pos#long> "'+str(longitude)+'"^^xsd:long')
+					metadataUploadable+=1
+				except:
+					metadataNotUploadable['long']=longitude
+			except:
+				pass
+		
+		#latitude check
+		try:
+			aux=result_meta['lat']['value']
+		except:
+			try:
+				latitude=args['lat']
+				try:
+					latitude=float(latitude)
+					data2sendlist.append(' <http://www.w3.org/2003/01/geo/wgs84_pos#lat> "'+str(latitude)+'"^^xsd:long')
+					metadataUploadable+=1
+				except:
+					metadataNotUploadable['lat']=latitude
+			except Exception as e:
+				print(e)
+				pass
+		
+				
+		#country check
 		if country_name:
 			#search for country on dbpedia, first query may work for some and not for others, try with netherlands for instance
 			query='select  ?country ?label where {?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheUnitedNations>; a dbo:Country; <http://www.w3.org/2000/01/rdf-schema#label> ?label. FILTER (lang(?label) = "en") FILTER (STRLANG("'+country_name+'", "en") = LCASE(?label) ) }'
-			print ("searching on dbpedia..")
+			print ("searching country on dbpedia..")
 			
 			result = get_data(dbpedia_server,query)
 			try:
 				country_url=result["results"]["bindings"][0]['country']['value']
 				label=result["results"]["bindings"][0]['label']['value']
 				data2sendlist.append('typon:isolatedAt <'+country_url+'>.<'+country_url+'> rdfs:label "'+label+'"@en')
+				metadataUploadable+=1
 			except:
 				try:
 					query='select  ?country ?label where {?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheUnitedNations>; <http://www.w3.org/2000/01/rdf-schema#label> ?label; a dbo:Country; dbo:longName ?longName. FILTER (lang(?longName) = "en") FILTER (STRLANG("'+country_name+'", "en") = LCASE(?longName) ) }'
@@ -1573,23 +2044,59 @@ class IsolatesAPItypon(Resource):
 					country_url=result["results"]["bindings"][0]['country']['value']
 					label=result["results"]["bindings"][0]['label']['value']
 					data2sendlist.append('typon:isolatedAt <'+country_url+'>.<'+country_url+'> rdfs:label "'+label+'"@en')
+					metadataUploadable+=1
 				except:
-					return "Metadata not added, "+str(country_name)+" not found on dbpedia search on http://dbpedia.org/page/Category:Member_states_of_the_United_Nations", 404 
+					print("Metadata not added, "+str(country_name)+" not found on dbpedia search on http://dbpedia.org/page/Category:Member_states_of_the_United_Nations")
+					metadataNotUploadable['country']=country_name
+					pass
 			
 		
 		
+		print(metadataNotUploadable)
+		
+		#if there is metadata to add or metadata to add and not passing the checks
+		if len(data2sendlist)>0 or len(list(metadataNotUploadable.keys()))>0:
+			
+			#if there is metadata to add, build the rdf and send to virtuoso	
+			if len(data2sendlist)>0:
+				rdf2send=";".join(data2sendlist)
 
+				result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_isol_url+'>'+rdf2send+'.}')
+
+				if result.status_code > 201 :
+					return "Sum Thing Wong uploading metadata to isolate", result.status_code
+				
+			def generate():
+				yield '{"Uploaded_total": ['+str(metadataUploadable)+'],'
+
+				
+				yield '"Not_uploaded": ['
+				
+				auxkeys=list(metadataNotUploadable.keys())
+				if len(auxkeys)<1:
+					yield ']}'
+				else:
+					
+					prev_item={}
+					try:
+						aux=auxkeys.pop(0)
+						prev_item[aux]=metadataNotUploadable[aux]
+					except Exception as e:
+						print(e)
+						yield ']}'
+						
+					for k in auxkeys:
+						yield json.dumps(prev_item)+','
+						prev_item={k:metadataNotUploadable[k]}
+					yield json.dumps(prev_item)+']}'
+			r = Response(stream_with_context(generate()), content_type='application/json')
 			
-		if len(data2sendlist)>0:
-			print(data2sendlist)
-			
-			rdf2send=";".join(data2sendlist)
-			result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_isol_url+'>'+rdf2send+'.}')
-			
-			if result.status_code > 201 :
-				return "Sum Thing Wong uploading metadata to isolate", result.status_code
+			if metadataUploadable>0:
+				r.headers.set('Metadata-Uploaded',True)
 			else:
-				return "Metadata added", result.status_code
+				r.headers.set('Metadata-Uploaded',False)
+			return r
+				
 		else:
 			return "No metadata to upload", 409
 	
@@ -1625,10 +2132,10 @@ class IsolatesProfileAPItypon(Resource):
 		
 		#check if schema exists for that species
 		schema_uri=spec_uri+"/schemas/"+str(id)
-		result = get_data(virtuoso_server,'ASK where { <'+schema_uri+'> a typon:Schema.}')
+		result = get_data(virtuoso_server,'ASK where { <'+schema_uri+'> a typon:Schema. FILTER NOT EXISTS { <'+schema_uri+'> typon:deprecated  "true"^^xsd:boolean }}')
 		
 		if not result['boolean'] :
-			return "Schema "+schema_uri+" not found", 404
+			return "Schema "+schema_uri+" not found or deprecated" , 404
 		
 		#~ query='select ?id (str(?name) as ?name)  where { ?locus a typon:Locus; typon:name ?name. OPTIONAL{<'+isol_url+'> typon:hasAllele ?alleles. ?alleles typon:id ?id; typon:isOfLocus ?locus.}} order by (?name)'
 		#get the alleles specific to that schema, deprecated alleles are removed
@@ -1640,6 +2147,65 @@ class IsolatesProfileAPItypon(Resource):
 			return (result["results"]["bindings"])
 		except:
 			return []
+
+#@app.route('/NS/species/<int:spec_id>/isolates/<string:isol_id>/loci/<int:id>')
+class IsolatesLociAPItypon(Resource):
+	# curl -i  http://localhost:5000/NS/isolates/<int:isol_id>/loci/<int:id>
+	
+	def __init__(self):
+		self.reqparse = reqparse.RequestParser()
+
+		self.reqparse.add_argument('allele_id', dest= 'allele_id',
+								   required=True,
+								   type=int,
+								   help='Id of the allele to add')
+	
+	@auth_token_required
+	def post(self, spec_id, isol_id,locus_id):
+		
+		args = self.reqparse.parse_args(strict=True)
+		
+		alleleId=args['allele_id']
+		
+		spec_uri=baseURL+"species/"+str(spec_id)
+		isol_url=spec_uri+"/isolates/"+str(isol_id)
+		
+		#check if isolate belongs to the user that is submitting the post
+		#~ userid=1
+		userid=g.identity.user.id
+		new_user_url=baseURL+"users/"+str(userid)
+		result = get_data(virtuoso_server,'ASK where { <'+isol_url+'> typon:sentBy <'+new_user_url+'>.}')
+		if not result['boolean'] :
+			return "Isolate not yours", 403
+		
+		#check if locus exists
+		locus_url=baseURL+"species/"+str(spec_id)+"/loci/"+str(locus_id)
+		result = get_data(virtuoso_server,'ASK where { <'+locus_url+'> a typon:Locus}')
+		if not result['boolean']:
+			return "Locus not found", 404
+		
+		#check if locus already exists on isolate
+		result = get_data(virtuoso_server,'ASK where { <'+isol_url+'> typon:hasAllele ?alleles.?alleles typon:isOfLocus <'+locus_url+'>.}')
+		if result['boolean']:
+			return "An allele was already attributed to that locus to that isolate", 409
+		
+		#check if allele exists
+		allele_uri=locus_url+'/alleles/'+str(alleleId)
+		result = get_data(virtuoso_server,'ASK where { <'+locus_url+'> a typon:Locus; typon:hasDefinedAllele <'+allele_uri+'> }')
+		if not result['boolean']:
+			return "Allele does not exist for that locus", 404
+		
+		rdf_2_ins='PREFIX typon: <http://purl.phyloviz.net/ontology/typon#> \nINSERT DATA IN GRAPH '+defaultgraph+' {<'+isol_url+'> typon:hasAllele <'+allele_uri+'>.}'
+		
+		print(rdf_2_ins)
+				
+		result = send_data(rdf_2_ins)
+
+		if result.status_code == 201 :
+			return "Locus and respective allele sucessfully added to isolate", 201	
+		else:
+			return "Sum Thing Wong", result.status_code
+
 
 #### ---- AUXILIARY METHODS ---- ###
 def check_len(arg):

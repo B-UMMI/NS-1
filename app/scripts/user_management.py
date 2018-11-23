@@ -31,6 +31,8 @@ url_send_local_virtuoso=app.config['URL_SEND_LOCAL_VIRTUOSO']
 #
 #the implementation was based on https://mandarvaze.github.io/2015/01/token-auth-with-flask-security.html
 
+#check https://pythonhosted.org/Flask-Security/api.html#flask_security.datastore.UserDatastore.create_user 
+
 
 
 def send_data(sparql_query):
@@ -47,31 +49,95 @@ def send_data(sparql_query):
 
 def main():
 	parser = argparse.ArgumentParser(
-        description="This program creates the user and returns the token")
+        description="This program creates manages the users, create new and get token, get token or change password")
 	parser.add_argument('-u', nargs='?', type=str, help='user email', required=True)
-	parser.add_argument('-p', nargs='?', type=str, help='password', required=True)
+	parser.add_argument('-p', nargs='?', type=str, help='password', required=False)
+	parser.add_argument('--role', nargs='?', type=str, help='Admin or User', required=True)
+	parser.add_argument('--new', nargs='?', type=str, help='new password, ', required=False, default=False)
 
 	args = parser.parse_args()
 	new_mail = args.u
 	new_pass = args.p
+	new_password2change = args.new
+	newUserRole = args.role
+	
+	
+	roles=['Admin','User']
+	if newUserRole not in roles:
+		print("role needs to be one of: ")
+		print(roles)
+		return
+	
+	
+	if not new_pass and not new_password2change:
+		print("no user password provided or new password to reset the user")
+		return
 	
 	#chewie@ns.com
 	#sdfkjsdfhkqjwheqwkjasdjn
-
+	
+	
 	with app.app_context():
+		
+		#very stupid way to change password but that's what I managed to do quickly
+		#if reset just delete the user, recreate it and change the id to the previous one
+		if isinstance(new_password2change, str):
+			
+			if not user_datastore.get_user(new_mail):
+				print("User not known, give correct email, use -h on how to use")
+				return
+			else:
+				olduser=user_datastore.get_user(new_mail)
+				userid_old=olduser.id
+				
+				user_datastore.delete_user(olduser)
+			
+				#delete the user	
+				userid=user_datastore.get_user(new_mail)
+				
+				#create the user with same email and new password
+				user_datastore.create_user(email=new_mail, password=new_password2change)
+				db.session.commit()
+				
+				#usercreated, get the user, change the id to the old one and commit
+				newuser=user_datastore.get_user(new_mail)
+				newuser_id=newuser.id
+				newuser.id = userid_old
+				
+				#~ newuser.id = 1
+				db.session.add(newuser)
+				db.session.commit()
+				
+				print("user old id:" +str(userid_old))
+				print("user new id: " +str(user_datastore.get_user(new_mail).id))
+				print(newuser)
+				
+				
+				r = requests.post('http://127.0.0.1:5000/login', data=json.dumps({'email':new_mail, 'password':new_password2change}), headers={'content-type': 'application/json'})
+				print (r.json())
+				if r.status_code > 201 :
+					print( "Sum Thing Wong sending the user to virtuoso")
+					return	
+				else:
+					print("User created")
+					return
+				
+				
 		if not user_datastore.get_user(new_mail):
 			print("new user")
 			user_datastore.create_user(email=new_mail, password=new_pass)
 			db.session.commit()
 			userid=user_datastore.get_user(new_mail).id
 			new_user_url=baseURL+"users/"+str(userid)
-			result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>.}')
+			result = send_data('INSERT DATA IN GRAPH '+defaultgraph+' { <'+new_user_url+'> a <http://xmlns.com/foaf/0.1/Agent>; typon:Role "'+newUserRole+'"^^xsd:string}')
 			r = requests.post('http://127.0.0.1:5000/login', data=json.dumps({'email':new_mail, 'password':new_pass}), headers={'content-type': 'application/json'})
 			print (r.json())
-			if result.status_code == 201 :
-				return "User created", 201		
+			if result.status_code > 201 :
+				print( "Sum Thing Wong")
+				return
 			else:
-				return "Sum Thing Wong", result.status_code
+				print("User created")
+				return
 		
 		print("user already exists")
 		r = requests.post('http://127.0.0.1:5000/login', data=json.dumps({'email':new_mail, 'password':new_pass}), headers={'content-type': 'application/json'})
