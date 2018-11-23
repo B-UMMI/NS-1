@@ -242,15 +242,27 @@ def add_profile(rdf_2_ins):
 
 #### ---- RESOURCES ---- ###
 
-#@app.route('/NS', methods=['GET'])
-class NS(Resource):
+#@app.route('/NS/stats') 
+class Statstypon(Resource):
 	#~ @auth_token_required
 	def get(self):
 		
+			
+		#count stuff from on virtuoso
+		try:
+			result = get_data(virtuoso_server,'select * where { {select (COUNT(?seq) as ?sequences) where {?seq a typon:Sequence }} { select (COUNT(?spec) as ?species) where {?spec a <http://purl.uniprot.org/core/Taxon>}} { select (COUNT(?loc) as ?loci) where {?loc a typon:Locus }} { select (COUNT(?user) as ?users) where {?user a <http://xmlns.com/foaf/0.1/Agent>. }} { select (COUNT(?schema) as ?schemas) where {?schema a typon:Schema. }} { select (COUNT(?isol) as ?isolates) where {?isol a typon:Isolate. }} { select (COUNT(?all) as ?alleles) where {?all a typon:Allele. }}}')
+
+			return (result["results"]["bindings"]),200
+		except:
+			return "Sum thing wong",result.status_code
+
+class NS(Resource):
+	#~ @auth_token_required
+	def get(self):
 		helloStr=""
 		with open("about.nfo","r") as myfile:
 			helloStr=myfile.read()
-			
+		
 		#count number of sequences on virtuoso
 		result = get_data(virtuoso_server,'select (COUNT(?seq) as ?count) where {?seq a typon:Sequence }')
 		number_sequences_vir=int(result["results"]["bindings"][0]['count']['value'])
@@ -271,8 +283,11 @@ class NS(Resource):
 		helloStr+=" AUTHORS: Mickael Silva, António Paulo \n\n EMAIL: mickaelsilva@medicina.ulisboa.pt"
 		
 		helloStr+="\n\n DATE: "+str(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')) +"\n\n NUMBER OF SEQUENCES: "+ str(number_sequences_vir)+"\n\n NUMBER OF LOCI: "+ str(number_loci_vir)+"\n\n NUMBER OF SPECIES: "+ str(number_species_vir)+"\n\n NUMBER OF USERS: "+ str(number_users_vir)
-		
+
+
 		return Response(helloStr, mimetype='text/plain')
+
+
 
 # curl -i  http://localhost:5000/NS/species/<int:spec_id>/profiles
 class profile(Resource):
@@ -452,7 +467,9 @@ class SpeciesListAPItypon(Resource):
 	def get(self):
 
 		#get all species
+		print("alala")
 		result = get_data(virtuoso_server,'select ?species ?name where { ?species owl:sameAs ?species2; a <http://purl.uniprot.org/core/Taxon>; typon:name ?name. }')
+		print(result)
 		return (result["results"]["bindings"])
 
 	# curl -i  http://localhost:5000/NS/species -d 'name=bacteria'

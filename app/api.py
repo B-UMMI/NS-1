@@ -1,6 +1,6 @@
 from app import app
 from flask_restful import Api
-from app.resources.resources_typon import NS, profile
+from app.resources.resources_typon import NS, profile,Statstypon
 from app.resources.resources_typon import SpeciesListAPItypon, SpeciesAPItypon
 from app.resources.resources_typon import SchemaListAPItypon, SchemaLociAPItypon, SchemaAPItypon, SchemaZipAPItypon
 from app.resources.resources_typon import LociListAPItypon, LociAPItypon, LociFastaAPItypon, LociSequencesAPItypon, LociUniprotAPItypon
@@ -20,6 +20,9 @@ api.add_resource(NS,
 				version+'/NS',
 				endpoint='NS')			
 
+api.add_resource(Statstypon,
+				version+'/NS/stats',
+				endpoint='NStats')
 
 api.add_resource(profile,
 				version+'/NS/species/<int:spec_id>/profiles',
