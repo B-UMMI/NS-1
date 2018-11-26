@@ -4,7 +4,7 @@
 This project main aim is to be used in association with chewBBaca_NS ( <https://github.com/B-UMMI/chewBBACA/tree/chewie_NS> ). The Nomenclature Server aims to provide a free MLST data repository (wgMLST, cgMLST,etc).
 
 ## notes:
- * The implementation enforces that every sequence needs to translate into a Coding Sequence. This will also be used to query the uniprot database for more info on the protein sequence.
+ * The implementation, by default, enforces that every sequence needs to translate into a Coding Sequence. This will also be used to query the uniprot database for more info on the protein sequence. Check the options on how to not enforce it.
  * Every submited sequence is hashed and checked against the database.
  * Sequences are species independent, while schemas, loci and isolates are not.
  * Every new species added needs to be found at <https://www.uniprot.org/taxonomy/> (exact string comparison). For instance: when adding `Acinetobacter calcoaceticus/baumannii complex` it will be mapped to <https://www.uniprot.org/taxonomy/909768>.
@@ -29,9 +29,9 @@ To run this you'll need (installation of the following requirements are covered 
 `sudo apt-get install aptitude`
 `sudo aptitude install  virtuoso-opensource`.  
 Other dists (see <http://vos.openlinksw.com/owiki/wiki/VOS>).
-	2. copy the virtuoso.db file to /var/lib/virtuoso-opensource-6.1/db/ (replace if already existing). This file is preloaded with the typon and the configuration necessary to be used with the application. Restart the virtuoso daemon `sudo service virtuoso-opensource-6.1 restart` 
+	2. Stop the running daemon of virtuoso `sudo service virtuoso-opensource-6.1 stop`. Copy the virtuoso.db file to /var/lib/virtuoso-opensource-6.1/db/ (replace if already existing). This file is preloaded with the typon and the configuration necessary to be used with the application. Restart the virtuoso daemon `sudo service virtuoso-opensource-6.1 start` 
 	3. configuring your virtuoso instance
-check http://localhost/8890 on your browser and go to conductor, default admin of virtuoso is set as u:dba p:dba (if you can't access directly you can jump to the next step and after rerout check http://000.000.00.00/conductor/ )
+check http://localhost/8890 on your browser and go to conductor, default admin of virtuoso is set as u:dba p:dba (if you can't access directly you can jump to the next step and after rerout check http://000.000.00.00/conductor/ ).
 **change the password** of dba at "system admin" -> "user accounts". Also change the user "demo" password (default password is "demo" and **should be changed**). The "demo" user will be the one used to contact with the Nomenclature server application.
 
 3. Install nginx
@@ -93,8 +93,8 @@ Enable new configuration by creating a symbolic link in sites-enabled directory.
 # First time usage:
 
 1. Create the "admin" user:
-   1. Admin user will be the first user to be created. Usear creation is only reservered to the person with access to the app server. To create a user, use the `user_management.py` script at `$path2App/app/scripts/`, provide an email and a pass and it will return your token.
-   2. The Created "admin" user is the only allowed to create a schema. **Schema creation is not allowed to other users**.
+   1. To create a user, use the `user_management.py` script at `$path2App/app/scripts/`, provide an email, a pass and a role ("Admin" or "User") and it will return your token.
+   2. Users with "Admin" role are the only allowed to create a schema. **Schema creation is not allowed to other users**.
 2. Create Schemas:
    1. Create a Schema based on a set of fasta files:  
 Use the `load_schema.py` script at `$path2App/app/scripts/` (use the `-h` flag for more info on how to use). `-t` flag is to be used with the token made on 1.
@@ -105,7 +105,8 @@ Use the `load_schema_no_fasta.py` script at `$path2App/app/scripts/` (use the `-
 
 1. Backing up virtuoso data:
    1. You can just save the virtuoso.db that should be at /var/lib/virtuoso-opensource-6.1/db/. To load it just copy the file to the same directory
-   2. You can also dump the graph. Check http://docs.openlinksw.com/virtuoso/rdfperfdumpandreloadgraphs/ to do it. To load, check http://vos.openlinksw.com/owiki/wiki/VOS/VirtBulkRDFLoader.
+   2. You can also dump the graph. Check http://docs.openlinksw.com/virtuoso/rdfperfdumpandreloadgraphs/ to do it. This is specially useful to edit the RDF. 
+   3. To load a dumped graph check http://vos.openlinksw.com/owiki/wiki/VOS/VirtBulkRDFLoader.
 
 2. Backing up Postgres:
    1. `psql dbname > outfile`
@@ -115,6 +116,5 @@ Use the `load_schema_no_fasta.py` script at `$path2App/app/scripts/` (use the `-
 # Future work
  - try latest virtuoso version (latest 6.x.xxx or 7)
  - improve users management
- - improve isolates associated metadata
  - improve api user inputs sanitization
 
