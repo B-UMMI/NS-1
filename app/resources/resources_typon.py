@@ -566,6 +566,12 @@ class SchemaListAPItypon(Resource):
 		except:
 			return "No valid name provided", 404
 		
+		# check if species exists
+		species_url=baseURL+"species/"+str(spec_id)
+		result = get_data(virtuoso_server,'ASK where { <'+species_url+'> a <http://purl.uniprot.org/core/Taxon>}')
+		if not result['boolean']:
+			return "Species doesnt exist", 404
+		
 		# check if a schema already exists with this description for this species
 		species_url=baseURL+"species/"+str(spec_id)
 		result = get_data(virtuoso_server,'ASK where { ?schema a typon:Schema; typon:isFromTaxon <'+species_url+'>; typon:schemaName "'+args['name']+'"^^xsd:string .}')
@@ -1052,8 +1058,10 @@ class LociListAPItypon(Resource):
 		
 		newLocusId=number_loci_spec+1
 		
-		#name will be something like prefix00001.fasta
-		aliases=args['prefix']+"%06d" % (newLocusId,)+".fasta"
+		#name will be something like prefix000001.fasta
+		#no more .fasta now
+		#aliases=args['prefix']+"%06d" % (newLocusId,)+".fasta"
+		aliases=args['prefix']+"%06d" % (newLocusId,)+""
 		
 		new_locus_url=baseURL+"species/"+str(spec_id)+"/loci/"+str(newLocusId)
 		
