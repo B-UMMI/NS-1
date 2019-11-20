@@ -1,13 +1,12 @@
 import json
 import time
+import urllib.request
+from urllib.parse import urlparse
 
 import requests
 from Bio.Seq import Seq
 from flask import abort
 from SPARQLWrapper import JSON
-import urllib.request
-from urllib.parse import urlparse
-
 
 
 def get_data(server, sparql_query):

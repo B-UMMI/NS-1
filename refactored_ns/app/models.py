@@ -2,12 +2,13 @@ import datetime
 from time import time
 
 import jwt
-from flask_security import (RoleMixin, Security, SQLAlchemyUserDatastore,
-                            UserMixin)
+from flask_security import (RoleMixin, UserMixin)
+from flask_security.utils import hash_password
 
-from app import app, db, login_manager
+from app import db, login_manager
+from config import Config
 
-key = app.config["SECRET_KEY"]
+key = Config.SECRET_KEY
 
 class Auxiliar(db.Model):
 	identifier = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -43,7 +44,7 @@ class Role(Base, RoleMixin):
 		self.name = name
 
 	def __repr__(self):
-		return '<Role %r>' % self.name
+		return '<Role {0}>'.format(self.name)
 
 
 class User(Base, UserMixin):
